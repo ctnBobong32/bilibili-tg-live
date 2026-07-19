@@ -397,6 +397,7 @@ function isAuthenticated(request, env) {
   }
 }
 
+// ===================== HTML 模板（已修复 Telegram 初始化） =====================
 var HTML_TEMPLATE = `<!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -606,6 +607,10 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
   var addRoomModal = getEl('addRoomModal');
   var protocolSelect = getEl('protocolSelect');
   var templateArea = getEl('templateArea');
+  var apiUrlGroup = getEl('apiUrlGroup');
+  var tgTokenGroup = getEl('tgTokenGroup');
+  var apiUrl = getEl('apiUrl');
+  var tgToken = getEl('tgToken');
 
   var modalResolve = null;
   function showModal(title, msg, confirmText, cancelText) {
@@ -814,54 +819,76 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
   var logTimer = setInterval(fetchLogs, 5000);
   fetchLogs();
 
-  if (protocolSelect) {
-    protocolSelect.addEventListener('change', function() {
-      var val = this.value;
-      var apiUrl = getEl('apiUrl');
-      var receiverLabel = getEl('receiverLabel');
-      var chatId = getEl('chatId');
-      var apiUrlGroup = getEl('apiUrlGroup');
-      var tgTokenGroup = getEl('tgTokenGroup');
-      if (!apiUrl || !receiverLabel || !chatId) return;
-      if (val === 'telegram') {
-        apiUrl.placeholder = 'https://api.telegram.org/bot<token>/sendMessage';
-        receiverLabel.textContent = '接收者 ID (chat_id)';
-        chatId.placeholder = '例如：123456789';
-        if (apiUrlGroup) apiUrlGroup.style.display = 'none';
-        if (tgTokenGroup) tgTokenGroup.style.display = 'block';
-        if (templateArea) templateArea.value = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
-      } else if (val === 'onebot_private') {
-        apiUrl.placeholder = 'http://127.0.0.1:5700/send_private_msg';
-        receiverLabel.textContent = '用户 ID (user_id)';
-        chatId.placeholder = '例如：123456789';
-        if (apiUrlGroup) apiUrlGroup.style.display = 'block';
-        if (tgTokenGroup) tgTokenGroup.style.display = 'none';
+  // ======== 修复 Telegram 初始化：页面加载后自动触发协议切换 ========
+  function updateNotifyForm() {
+    if (!protocolSelect) return;
+    var val = protocolSelect.value;
+    if (val === 'telegram') {
+      if (apiUrlGroup) apiUrlGroup.style.display = 'none';
+      if (tgTokenGroup) tgTokenGroup.style.display = 'block';
+      if (apiUrl) apiUrl.placeholder = 'https://api.telegram.org/bot<token>/sendMessage';
+      if (templateArea) templateArea.value = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
+    } else {
+      if (apiUrlGroup) apiUrlGroup.style.display = 'block';
+      if (tgTokenGroup) tgTokenGroup.style.display = 'none';
+      if (val === 'onebot_private') {
+        if (apiUrl) apiUrl.placeholder = 'http://127.0.0.1:5700/send_private_msg';
         if (templateArea) templateArea.value = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
       } else if (val === 'onebot_group') {
-        apiUrl.placeholder = 'http://127.0.0.1:5700/send_group_msg';
-        receiverLabel.textContent = '群 ID (group_id)';
-        chatId.placeholder = '例如：123456789';
-        if (apiUrlGroup) apiUrlGroup.style.display = 'block';
-        if (tgTokenGroup) tgTokenGroup.style.display = 'none';
+        if (apiUrl) apiUrl.placeholder = 'http://127.0.0.1:5700/send_group_msg';
         if (templateArea) templateArea.value = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
       } else if (val === 'discord') {
-        apiUrl.placeholder = 'https://discord.com/api/webhooks/...';
-        receiverLabel.textContent = '无 (使用 Webhook URL)';
-        chatId.placeholder = '可不填';
-        if (apiUrlGroup) apiUrlGroup.style.display = 'block';
-        if (tgTokenGroup) tgTokenGroup.style.display = 'none';
+        if (apiUrl) apiUrl.placeholder = 'https://discord.com/api/webhooks/...';
         if (templateArea) templateArea.value = '**[开播] {{主播}}**\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
       } else if (val === 'custom_webhook') {
-        apiUrl.placeholder = 'https://your-server.com/webhook';
-        receiverLabel.textContent = '无 (使用 Webhook URL)';
-        chatId.placeholder = '可不填';
-        if (apiUrlGroup) apiUrlGroup.style.display = 'block';
-        if (tgTokenGroup) tgTokenGroup.style.display = 'none';
+        if (apiUrl) apiUrl.placeholder = 'https://your-server.com/webhook';
         if (templateArea) templateArea.value = '{"event":"live_start","anchor":"{{主播}}","title":"{{标题}}","online":{{人气}},"room_id":"{{房间号}}"}';
+      }
+    }
+    // 更新接收者 ID 标签
+    var receiverLabel = getEl('receiverLabel');
+    var chatId = getEl('chatId');
+    if (receiverLabel && chatId) {
+      if (val === 'telegram') {
+        receiverLabel.textContent = '接收者 ID (chat_id)';
+        chatId.placeholder = '例如：123456789';
+      } else if (val === 'onebot_private') {
+        receiverLabel.textContent = '用户 ID (user_id)';
+        chatId.placeholder = '例如：123456789';
+      } else if (val === 'onebot_group') {
+        receiverLabel.textContent = '群 ID (group_id)';
+        chatId.placeholder = '例如：123456789';
+      } else {
+        receiverLabel.textContent = '接收者 ID (可选)';
+        chatId.placeholder = '可不填';
+      }
+    }
+  }
+
+  if (protocolSelect) {
+    protocolSelect.addEventListener('change', updateNotifyForm);
+    // 手动触发一次，初始化显示
+    updateNotifyForm();
+  }
+
+  // 提交表单时构建完整 API 地址（针对 Telegram）
+  var addNotifyForm = getEl('addNotifyForm');
+  if (addNotifyForm) {
+    addNotifyForm.addEventListener('submit', function(e) {
+      if (!protocolSelect) return;
+      if (protocolSelect.value === 'telegram') {
+        var token = tgToken ? tgToken.value.trim() : '';
+        if (!token) {
+          showMessage('请输入 Bot Token', 'error');
+          e.preventDefault();
+          return;
+        }
+        if (apiUrl) apiUrl.value = 'https://api.telegram.org/bot' + token + '/sendMessage';
       }
     });
   }
 
+  // 事件委托（测试/切换按钮）
   document.addEventListener('click', function(e) {
     var target = e.target.closest('button');
     if (!target) return;
