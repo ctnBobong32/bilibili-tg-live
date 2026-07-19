@@ -4,7 +4,7 @@ compatibility_date = "2026-07-20"
 compatibility_flags = ["nodejs_compat"]
 
 routes = [
-  { pattern = "*", script = "bilibili-tg-live" }
+  { pattern = "live.262832.xyz/*", script = "bilibili-tg-live" }
 ]
 
 [observability]
