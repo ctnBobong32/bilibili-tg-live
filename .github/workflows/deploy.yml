@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  部署:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - name: 拉取代码
