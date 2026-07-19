@@ -1,12 +1,11 @@
 var CONFIG = {
   MAIN_API: 'https://uapis.cn/api/v1/social/bilibili/liveroom',
   USER_API: 'https://uapis.cn/api/v1/social/bilibili/userinfo',
-  IS_LIVE_STATUS: [1, 2],
+  IS_LIVE_STATUS: [1],
   CACHE_TTL: 86400,
   USER_INFO_TTL: 86400,
   MAX_LOG_ENTRIES: 500,
-  POPULARITY_MILESTONES: [1000, 5000, 10000, 50000, 100000],
-  FIRST_SYNC_DIRECT: true
+  POPULARITY_MILESTONES: [1000, 5000, 10000, 50000, 100000]
 };
 
 function toRoomId(id) {
@@ -85,16 +84,13 @@ async function getMonitorState(env, roomId) {
   if (val) return val;
   return {
     room_id: roomId,
-    state: 'UNKNOWN',
-    last_live_time: '',
-    notified_live_time: '',
+    state: 'OFFLINE',
     last_title: '',
     last_cover: '',
     last_area: '',
     last_parent_area: '',
     last_online: 0,
-    last_update: '',
-    version: 2
+    last_live_time: ''
   };
 }
 
@@ -297,7 +293,6 @@ async function buildNotification(roomId, current, env, eventType, extra) {
 
 async function processRoom(roomId, env, options) {
   options = options || {};
-  var force = options.force || false;
   roomId = toRoomId(roomId);
   var current;
   try {
@@ -310,47 +305,32 @@ async function processRoom(roomId, env, options) {
     return { error: e.message };
   }
   var isLive = CONFIG.IS_LIVE_STATUS.includes(current.live_status);
+  var state = isLive ? 'LIVE' : 'OFFLINE';
   var prev = await getMonitorState(env, roomId);
-  var firstSync = force || (CONFIG.FIRST_SYNC_DIRECT && (!prev.last_update || prev.state === 'UNKNOWN'));
-  var state = prev.state || 'UNKNOWN';
-  var notified_live_time = prev.notified_live_time || '';
+  var oldState = prev.state || 'OFFLINE';
   var events = [];
 
-  if (state === 'UNKNOWN') {
-    if (isLive) {
-      state = 'LIVE';
+  if (oldState !== state) {
+    if (state === 'LIVE') {
       events.push({ type: 'live_start', data: current });
-      notified_live_time = current.live_time || '';
     } else {
-      state = 'OFFLINE';
-    }
-  } else if (state === 'OFFLINE') {
-    if (isLive) {
-      state = 'LIVE';
-      events.push({ type: 'live_start', data: current });
-      notified_live_time = current.live_time || '';
+      events.push({ type: 'live_end', data: current });
     }
   } else if (state === 'LIVE') {
-    if (!isLive) {
-      state = 'OFFLINE';
-      events.push({ type: 'live_end', data: current });
-      notified_live_time = '';
-    } else {
-      if (prev.last_title && prev.last_title !== current.title) {
-        events.push({ type: 'title_change', data: current, old_title: prev.last_title });
-      }
-      if (prev.last_cover && prev.last_cover !== current.user_cover) {
-        events.push({ type: 'cover_change', data: current });
-      }
-      if (prev.last_area !== current.area_name || prev.last_parent_area !== current.parent_area_name) {
-        events.push({ type: 'area_change', data: current, old_area: prev.last_area, old_parent_area: prev.last_parent_area });
-      }
-      var prevOnline = prev.last_online || 0;
-      for (var i = 0; i < CONFIG.POPULARITY_MILESTONES.length; i++) {
-        var milestone = CONFIG.POPULARITY_MILESTONES[i];
-        if (prevOnline < milestone && current.online >= milestone) {
-          events.push({ type: 'popularity_milestone', data: current, milestone: milestone });
-        }
+    if (prev.last_title && prev.last_title !== current.title) {
+      events.push({ type: 'title_change', data: current, old_title: prev.last_title });
+    }
+    if (prev.last_cover && prev.last_cover !== current.user_cover) {
+      events.push({ type: 'cover_change', data: current });
+    }
+    if (prev.last_area !== current.area_name || prev.last_parent_area !== current.parent_area_name) {
+      events.push({ type: 'area_change', data: current, old_area: prev.last_area, old_parent_area: prev.last_parent_area });
+    }
+    var prevOnline = prev.last_online || 0;
+    for (var i = 0; i < CONFIG.POPULARITY_MILESTONES.length; i++) {
+      var milestone = CONFIG.POPULARITY_MILESTONES[i];
+      if (prevOnline < milestone && current.online >= milestone) {
+        events.push({ type: 'popularity_milestone', data: current, milestone: milestone });
       }
     }
   }
@@ -359,12 +339,11 @@ async function processRoom(roomId, env, options) {
     room_id: roomId,
     state: state,
     last_live_time: current.live_time || prev.last_live_time || '',
-    notified_live_time: notified_live_time,
     last_title: current.title || '',
     last_cover: current.user_cover || '',
     last_area: current.area_name || '',
     last_parent_area: current.parent_area_name || '',
-    last_online: current.online || 0,
+    last_online: Number(current.online || 0),
     last_update: new Date().toISOString(),
     version: 2
   };
@@ -1061,24 +1040,10 @@ export default {
       await addRoom(env, roomId);
       await addLog('info', '添加房间 ' + roomId);
       try {
-        var data = await fetchLiveStatus(roomId);
-        var isLive = CONFIG.IS_LIVE_STATUS.includes(Number(data.live_status));
-        await setMonitorState(env, roomId, {
-          room_id: roomId,
-          state: isLive ? 'LIVE' : 'OFFLINE',
-          last_live_time: data.live_time || '',
-          notified_live_time: data.live_time || '',
-          last_title: data.title || '',
-          last_cover: data.user_cover || '',
-          last_area: data.area_name || '',
-          last_parent_area: data.parent_area_name || '',
-          last_online: data.online || 0,
-          last_update: new Date().toISOString(),
-          version: 2
-        });
-        await addLog('info', '初始化监控状态成功 ' + roomId + (isLive ? ' (直播中)' : ' (未开播)'));
+        await processRoom(roomId, env, { force: true });
+        await addLog('info', '添加后同步完成 ' + roomId);
       } catch(e) {
-        await addLog('error', '初始化状态失败 ' + e.message);
+        await addLog('error', '添加后同步失败 ' + e.message);
       }
       return new Response(await renderAdminPage(env, '房间 ' + roomId + ' 已添加'), { headers: { 'Content-Type': 'text/html' } });
     }
