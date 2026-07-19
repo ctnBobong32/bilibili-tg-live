@@ -397,7 +397,7 @@ function isAuthenticated(request, env) {
   }
 }
 
-// ===================== HTML 模板（已修复 Telegram 初始化） =====================
+// ===================== HTML 模板（已修复模板覆盖问题） =====================
 var HTML_TEMPLATE = `<!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -819,7 +819,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
   var logTimer = setInterval(fetchLogs, 5000);
   fetchLogs();
 
-  // ======== 修复 Telegram 初始化：页面加载后自动触发协议切换 ========
+  // ======== 修复：模板只作为 placeholder，不覆盖用户输入 ========
   function updateNotifyForm() {
     if (!protocolSelect) return;
     var val = protocolSelect.value;
@@ -827,22 +827,22 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
       if (apiUrlGroup) apiUrlGroup.style.display = 'none';
       if (tgTokenGroup) tgTokenGroup.style.display = 'block';
       if (apiUrl) apiUrl.placeholder = 'https://api.telegram.org/bot<token>/sendMessage';
-      if (templateArea) templateArea.value = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
+      if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
     } else {
       if (apiUrlGroup) apiUrlGroup.style.display = 'block';
       if (tgTokenGroup) tgTokenGroup.style.display = 'none';
       if (val === 'onebot_private') {
         if (apiUrl) apiUrl.placeholder = 'http://127.0.0.1:5700/send_private_msg';
-        if (templateArea) templateArea.value = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
+        if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
       } else if (val === 'onebot_group') {
         if (apiUrl) apiUrl.placeholder = 'http://127.0.0.1:5700/send_group_msg';
-        if (templateArea) templateArea.value = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
+        if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
       } else if (val === 'discord') {
         if (apiUrl) apiUrl.placeholder = 'https://discord.com/api/webhooks/...';
-        if (templateArea) templateArea.value = '**[开播] {{主播}}**\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
+        if (templateArea) templateArea.placeholder = '**[开播] {{主播}}**\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
       } else if (val === 'custom_webhook') {
         if (apiUrl) apiUrl.placeholder = 'https://your-server.com/webhook';
-        if (templateArea) templateArea.value = '{"event":"live_start","anchor":"{{主播}}","title":"{{标题}}","online":{{人气}},"room_id":"{{房间号}}"}';
+        if (templateArea) templateArea.placeholder = '{"event":"live_start","anchor":"{{主播}}","title":"{{标题}}","online":{{人气}},"room_id":"{{房间号}}"}';
       }
     }
     // 更新接收者 ID 标签
@@ -867,7 +867,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
 
   if (protocolSelect) {
     protocolSelect.addEventListener('change', updateNotifyForm);
-    // 手动触发一次，初始化显示
+    // 手动触发一次，设置初始占位
     updateNotifyForm();
   }
 
@@ -1017,11 +1017,9 @@ export default {
       var chat_id = form.get('chat_id') || '';
       var template = form.get('template') || '';
       if (!name || !chat_id) return new Response('缺少必要字段', { status: 400 });
-      // 如果是 telegram 且 api_url 为空或占位符，则从 tg_token 构建
       if (protocol === 'telegram') {
         var tgToken = form.get('tg_token') || '';
         if (!tgToken) {
-          // 如果 api_url 已经包含 bot token，则尝试提取
           if (api_url && api_url.includes('bot') && api_url.includes('/sendMessage')) {
             // 保持原样
           } else {
@@ -1066,7 +1064,6 @@ export default {
         if (configs[k].id === id) { config = configs[k]; break; }
       }
       if (!config) return new Response('配置不存在', { status: 404 });
-      // 发送测试消息（纯文本，不依赖房间）
       var testText = '这是一条测试消息';
       var result = await sendNotificationToConfig(config, testText, { test: true });
       if (result.success) {
