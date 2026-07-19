@@ -1,0 +1,9 @@
+name = "bilibili-tg-live"
+main = "_worker.js"
+compatibility_date = "2026-07-20"
+compatibility_flags = ["nodejs_compat"]
+
+# 路由配置
+routes = [
+  { pattern = "*", script = "bilibili-tg-live" }
+]
