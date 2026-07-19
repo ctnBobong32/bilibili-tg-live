@@ -10,12 +10,10 @@ var CONFIG = {
   OFFLINE_CONFIRM_THRESHOLD: 3,
 };
 
-// ---------- 工具函数 ----------
 function toRoomId(id) {
   return String(id).trim();
 }
 
-// ---------- KV 操作 ----------
 async function getRoomList(env) {
   var val = await env.ROOM_STORE.get('rooms', 'json');
   return val || [];
@@ -25,7 +23,6 @@ async function setRoomList(env, rooms) {
   await env.ROOM_STORE.put('rooms', JSON.stringify(rooms));
 }
 
-// 修复：统一类型为字符串，去重
 async function addRoom(env, roomId) {
   roomId = toRoomId(roomId);
   var rooms = await getRoomList(env);
@@ -38,7 +35,6 @@ async function addRoom(env, roomId) {
   return rooms;
 }
 
-// 修复：删除时类型统一，清理缓存
 async function removeRoom(env, roomId) {
   roomId = toRoomId(roomId);
   var rooms = await getRoomList(env);
@@ -83,7 +79,6 @@ async function toggleNotifyConfig(env, id) {
   await setNotifyConfigs(env, updated);
 }
 
-// ---------- 监控状态 KV ----------
 async function getMonitorState(env, roomId) {
   roomId = toRoomId(roomId);
   var key = 'monitor:' + roomId;
@@ -114,7 +109,6 @@ async function setMonitorState(env, roomId, state) {
   await env.ROOM_STORE.put(key, JSON.stringify(state));
 }
 
-// ---------- 缓存辅助 ----------
 function buildCacheKey() {
   var parts = Array.prototype.slice.call(arguments);
   return parts.join(':');
@@ -137,13 +131,11 @@ async function setCache(key, data, ttl) {
   await cache.put(new Request('https://cache/' + key), resp);
 }
 
-// 清理页面缓存
 async function clearPageCache() {
   var cache = caches.default;
   await cache.delete(new Request('https://cache/admin'));
 }
 
-// ---------- 日志 ----------
 async function getLogs() {
   return (await getCache('logs')) || [];
 }
@@ -165,7 +157,6 @@ async function clearLogs() {
   await addLog('info', '日志已清除');
 }
 
-// ---------- B站 API ----------
 async function fetchLiveStatus(roomId) {
   roomId = toRoomId(roomId);
   var url = CONFIG.MAIN_API + '?room_id=' + encodeURIComponent(roomId);
@@ -193,7 +184,6 @@ async function fetchUserInfo(uid) {
   return data;
 }
 
-// ---------- 通知协议 ----------
 async function sendNotificationToConfig(config, text, extra) {
   extra = extra || {};
   try {
@@ -308,7 +298,6 @@ async function buildNotification(roomId, current, env, eventType, extra) {
   return message;
 }
 
-// ---------- 状态机处理 ----------
 async function processRoom(roomId, env) {
   roomId = toRoomId(roomId);
   var current;
@@ -329,7 +318,6 @@ async function processRoom(roomId, env) {
   var notified_live_time = prev.notified_live_time || '';
   var events = [];
 
-  // 状态机
   if (state === 'UNKNOWN') {
     if (isLive) {
       state = 'STARTING';
@@ -449,7 +437,6 @@ async function processRoom(roomId, env) {
   return { state: state, events: events };
 }
 
-// ---------- 批量监控 ----------
 async function monitorAll(env) {
   var roomIds = await getRoomList(env);
   if (roomIds.length === 0) {
@@ -472,7 +459,6 @@ async function monitorAll(env) {
   return results;
 }
 
-// ---------- 认证 ----------
 function isAuthenticated(request, env) {
   var cookie = request.headers.get('Cookie') || '';
   var authCookie = cookie.split(';').find(function(c) { return c.trim().startsWith('auth='); });
@@ -487,20 +473,21 @@ function isAuthenticated(request, env) {
   }
 }
 
-// ---------- HTML 模板 ----------
+// ---------- HTML 模板（已优化移动端） ----------
 var HTML_TEMPLATE = `<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>直播监控管理</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui;background:#f3f4f6;padding:1rem;color:#1f2937}
+body{font-family:system-ui;background:#f3f4f6;padding:1rem;color:#1f2937;-webkit-tap-highlight-color:transparent}
 .container{max-width:1400px;margin:0 auto}
 .header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem}
-.header h1{font-size:1.8rem;font-weight:600}
-.btn{padding:10px 18px;min-height:42px;border-radius:10px;font-size:15px;font-weight:600;border:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:.2s}
+.header h1{font-size:1.5rem;font-weight:600}
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:12px 20px;min-height:48px;border:none;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer;transition:all .2s;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;gap:6px;flex-shrink:0}
+.btn:active{transform:scale(0.96)}
 .btn-primary{background:#2563eb;color:#fff}
 .btn-primary:hover{background:#1d4ed8}
 .btn-success{background:#16a34a;color:#fff}
@@ -517,15 +504,15 @@ body{font-family:system-ui;background:#f3f4f6;padding:1rem;color:#1f2937}
 .btn-test:hover{background:#7e22ce}
 .btn-refresh{background:#0891b2;color:#fff}
 .btn-refresh:hover{background:#0e7490}
-.btn-sm{padding:6px 12px;font-size:13px;min-height:32px}
-.tab-bar{display:flex;gap:0.5rem;margin-bottom:1rem}
-.tab-btn{padding:0.5rem 1rem;border:none;border-radius:6px;cursor:pointer;background:#e5e7eb;color:#1f2937;font-size:0.9rem}
+.btn-sm{padding:8px 14px;min-height:36px;font-size:14px}
+.tab-bar{display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap}
+.tab-btn{padding:0.5rem 1rem;border:none;border-radius:6px;cursor:pointer;background:#e5e7eb;color:#1f2937;font-size:0.9rem;touch-action:manipulation}
 .tab-active{background:#2563eb;color:#fff}
-.panel{background:#fff;border-radius:12px;border:1px solid #e5e7eb;padding:1.5rem;margin-bottom:1.5rem;box-shadow:0 1px 3px rgba(0,0,0,0.05)}
+.panel{background:#fff;border-radius:12px;border:1px solid #e5e7eb;padding:1rem;margin-bottom:1.5rem;box-shadow:0 1px 3px rgba(0,0,0,0.05);overflow:hidden}
 .panel h3{font-size:1.2rem;font-weight:600;margin-bottom:0.75rem}
-.flex-row{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-bottom:15px}
-.card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:15px}
-.room-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:0.75rem;display:flex;gap:0.75rem;align-items:flex-start;transition:0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.05)}
+.flex-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:15px}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:15px}
+.room-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:0.75rem;display:flex;gap:0.75rem;align-items:flex-start;transition:0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.05);word-break:break-word}
 .room-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,0.1)}
 .status-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:3px}
 .room-info{flex:1;min-width:0}
@@ -533,33 +520,50 @@ body{font-family:system-ui;background:#f3f4f6;padding:1rem;color:#1f2937}
 .room-title{font-size:0.95rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .room-meta{font-size:0.75rem;color:#6b7280;margin-top:2px}
 .room-actions{display:flex;gap:0.3rem;flex-wrap:wrap}
-table{width:100%;border-collapse:collapse;font-size:0.85rem}
+table{width:100%;border-collapse:collapse;font-size:0.85rem;overflow-x:auto;display:block}
+thead, tbody{display:table;width:100%}
 th{text-align:left;padding:0.4rem 0.6rem;border-bottom:2px solid #e5e7eb}
 td{padding:0.4rem 0.6rem;border-bottom:1px solid #e5e7eb}
-.log-container{max-height:400px;overflow-y:auto;font-family:monospace;font-size:0.7rem;background:#f9fafb;padding:0.5rem;border-radius:6px;border:1px solid #e5e7eb}
+.log-container{max-height:400px;overflow-y:auto;font-family:monospace;font-size:0.7rem;background:#f9fafb;padding:0.5rem;border-radius:6px;border:1px solid #e5e7eb;-webkit-overflow-scrolling:touch}
 .log-entry{border-bottom:1px solid #e5e7eb;padding:0.1rem 0}
 .log-time{color:#6b7280;margin-right:0.5rem}
 .log-info{color:#2563eb}
 .log-warn{color:#d97706}
 .log-error{color:#dc2626}
-.modal-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:999;justify-content:center;align-items:center}
+.modal-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:999;justify-content:center;align-items:center;padding:1rem}
 .modal-overlay.active{display:flex}
-.modal-box{background:#fff;padding:1.5rem;border-radius:12px;max-width:500px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3)}
+.modal-box{background:#fff;padding:1.5rem;border-radius:12px;max-width:500px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden}
 .modal-actions{margin-top:1rem;display:flex;gap:0.5rem;justify-content:flex-end}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0.5rem}
 .form-grid .full{grid-column:span 2}
 label{display:block;font-size:0.75rem;font-weight:500;margin-bottom:0.1rem}
-input,select,textarea{width:100%;padding:0.3rem;border:1px solid #d1d5db;border-radius:6px;font-size:0.85rem}
-@media(max-width:640px){.form-grid{grid-template-columns:1fr}.form-grid .full{grid-column:span 1}.card-grid{grid-template-columns:1fr}.btn{width:100%;justify-content:center}}
+input,select,textarea{width:100%;padding:0.5rem;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;background:#fff;color:#1f2937}
+input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset:1px}
+@media(max-width:640px){
+  .header h1{font-size:1.3rem}
+  .btn{padding:12px 16px;min-height:48px;font-size:15px;width:100%;justify-content:center}
+  .btn-sm{padding:10px 12px;min-height:40px;font-size:14px}
+  .flex-row{gap:8px}
+  .flex-row .btn{width:100%}
+  .card-grid{grid-template-columns:1fr}
+  .form-grid{grid-template-columns:1fr}
+  .form-grid .full{grid-column:span 1}
+  .modal-box{padding:1rem}
+  .tab-bar{gap:0.3rem}
+  .tab-btn{flex:1;text-align:center;padding:0.4rem 0.5rem;font-size:0.8rem}
+  .room-card{flex-wrap:wrap}
+  .room-actions{width:100%;justify-content:flex-end}
+  table{display:block;overflow-x:auto;white-space:nowrap}
+}
 </style>
 </head>
 <body>
 <div class="container">
   <div class="header">
     <h1>直播监控管理</h1>
-    <div>
-      <button id="themeToggle" class="btn">深色</button>
-      <button onclick="document.getElementById('logoutForm').submit();" class="btn">退出</button>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+      <button id="themeToggle" class="btn" onclick="toggleTheme()">深色</button>
+      <button class="btn" onclick="document.getElementById('logoutForm').submit();">退出</button>
       <form id="logoutForm" method="POST" action="/logout" style="display:none"></form>
     </div>
   </div>
@@ -567,22 +571,22 @@ input,select,textarea{width:100%;padding:0.3rem;border:1px solid #d1d5db;border-
   <div id="messageArea"></div>
 
   <div class="tab-bar">
-    <button class="tab-btn tab-active" data-tab="rooms">房间</button>
-    <button class="tab-btn" data-tab="notifies">通知</button>
-    <button class="tab-btn" data-tab="logs">日志</button>
+    <button class="tab-btn tab-active" data-tab="rooms" onclick="switchTab('rooms')">房间</button>
+    <button class="tab-btn" data-tab="notifies" onclick="switchTab('notifies')">通知</button>
+    <button class="tab-btn" data-tab="logs" onclick="switchTab('logs')">日志</button>
   </div>
 
   <div id="panelRooms" class="panel">
     <div class="flex-row">
-      <button id="addRoomBtn" class="btn btn-add">添加房间</button>
-      <button id="checkAllBtn" class="btn btn-check">检查全部</button>
-      <button id="refreshRoomsBtn" class="btn btn-refresh">刷新状态</button>
-      <button id="sendLiveBtn" class="btn btn-warning">模拟开播</button>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-        <input id="singleCheckInput" placeholder="房间号" style="width:8rem;padding:0.3rem;border:1px solid #d1d5db;border-radius:6px">
-        <button id="singleCheckBtn" class="btn btn-test">单查</button>
+      <button class="btn btn-add" onclick="showAddRoomModal()">添加房间</button>
+      <button class="btn btn-check" onclick="checkAll()">检查全部</button>
+      <button class="btn btn-refresh" onclick="refreshRooms()">刷新状态</button>
+      <button class="btn btn-warning" onclick="sendLiveNotify()">模拟开播</button>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;width:100%">
+        <input id="singleCheckInput" placeholder="房间号" style="flex:1;min-width:120px">
+        <button class="btn btn-test" onclick="singleCheck()">单查</button>
       </div>
-      <button id="exportLogsBtn" class="btn">导出日志</button>
+      <button class="btn" onclick="exportLogs()">导出日志</button>
     </div>
     <div id="roomContainer" class="card-grid">{{ROOMS}}</div>
   </div>
@@ -593,7 +597,7 @@ input,select,textarea{width:100%;padding:0.3rem;border:1px solid #d1d5db;border-
       <form method="POST" action="/add-notify" id="addNotifyForm" class="form-grid">
         <div><label>名称</label><input type="text" name="name" placeholder="主Telegram" required></div>
         <div><label>协议</label>
-          <select name="protocol" id="protocolSelect">
+          <select name="protocol" id="protocolSelect" onchange="updateProtocol()">
             <option value="telegram">Telegram</option>
             <option value="onebot_private">OneBot 私聊</option>
             <option value="onebot_group">OneBot 群聊</option>
@@ -605,7 +609,7 @@ input,select,textarea{width:100%;padding:0.3rem;border:1px solid #d1d5db;border-
         <div><label id="receiverLabel">接收者 ID</label><input type="text" name="chat_id" id="chatId" placeholder="例如：123456789"></div>
         <div class="full"><label><input type="checkbox" name="enabled" checked value="1"> 启用</label></div>
         <div class="full"><label>通知模板 (可选)</label><textarea name="template" id="templateArea" placeholder="支持 {{主播}} {{标题}} {{人气}} 等变量" rows="2"></textarea></div>
-        <div class="full"><button type="submit" class="btn btn-primary">添加配置</button></div>
+        <div class="full"><button type="submit" class="btn btn-primary" style="width:100%">添加配置</button></div>
       </form>
     </div>
     <div>
@@ -618,68 +622,68 @@ input,select,textarea{width:100%;padding:0.3rem;border:1px solid #d1d5db;border-
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.5rem">
       <h3>日志</h3>
       <div style="display:flex;gap:0.3rem;flex-wrap:wrap">
-        <button id="clearLogsBtn" class="btn btn-danger btn-sm">清除</button>
-        <button id="refreshLogsBtn" class="btn btn-sm">刷新</button>
-        <label style="font-size:0.75rem"><input type="checkbox" id="autoRefresh" checked> 自动刷新</label>
-        <input id="logSearch" placeholder="搜索..." style="width:8rem;padding:0.3rem;border:1px solid #d1d5db;border-radius:6px">
-        <select id="logLevelFilter" style="padding:0.3rem;border:1px solid #d1d5db;border-radius:6px">
-          <option value="">全部</option>
-          <option value="info">Info</option>
-          <option value="warn">Warn</option>
-          <option value="error">Error</option>
-        </select>
+        <button class="btn btn-danger btn-sm" onclick="clearLogsAction()">清除</button>
+        <button class="btn btn-sm" onclick="fetchLogs()">刷新</button>
+        <label style="font-size:0.75rem;display:flex;align-items:center"><input type="checkbox" id="autoRefresh" checked> 自动刷新</label>
+        <input id="logSearch" placeholder="搜索..." style="flex:1;min-width:80px">
+        <select id="logLevelFilter"><option value="">全部</option><option value="info">Info</option><option value="warn">Warn</option><option value="error">Error</option></select>
       </div>
     </div>
     <div id="logContainer" class="log-container">{{LOGS}}</div>
   </div>
 </div>
 
+<!-- 通用模态框 -->
 <div id="customModal" class="modal-overlay">
   <div class="modal-box">
     <h3 id="modalTitle">提示</h3>
     <p id="modalMessage"></p>
     <div class="modal-actions">
-      <button id="modalConfirmBtn" class="btn btn-primary">确定</button>
-      <button id="modalCancelBtn" class="btn">取消</button>
+      <button id="modalConfirmBtn" class="btn btn-primary" onclick="closeModal(true)">确定</button>
+      <button id="modalCancelBtn" class="btn" onclick="closeModal(false)">取消</button>
     </div>
   </div>
 </div>
 
+<!-- 添加房间模态框 -->
 <div id="addRoomModal" class="modal-overlay">
   <div class="modal-box">
     <h3>添加房间</h3>
     <p>请输入直播间房间号：</p>
-    <input type="text" id="roomInput" placeholder="例如：1768500100" style="width:100%;margin:0.5rem 0;padding:0.5rem;border:1px solid #d1d5db;border-radius:6px">
+    <input type="text" id="roomInput" placeholder="例如：1768500100" style="width:100%;margin:0.5rem 0;padding:0.5rem;border:1px solid #d1d5db;border-radius:6px;font-size:1rem">
     <div class="modal-actions">
-      <button id="addRoomConfirmBtn" class="btn btn-primary">完成</button>
-      <button id="addRoomCancelBtn" class="btn">取消</button>
+      <button class="btn btn-primary" onclick="addRoomConfirm()">完成</button>
+      <button class="btn" onclick="closeAddRoomModal()">取消</button>
     </div>
   </div>
 </div>
 
 <script>
-document.getElementById('themeToggle').addEventListener('click', function() {
+// ---------- 全局变量 ----------
+var modalResolve = null;
+
+// ---------- 主题切换 ----------
+function toggleTheme() {
   var html = document.documentElement;
   var theme = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
   html.setAttribute('data-theme', theme);
-  this.textContent = theme === 'dark' ? '亮色' : '深色';
-});
+  document.getElementById('themeToggle').textContent = theme === 'dark' ? '亮色' : '深色';
+}
 if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
   document.documentElement.setAttribute('data-theme', 'dark');
   document.getElementById('themeToggle').textContent = '亮色';
 }
 
-document.querySelectorAll('.tab-btn').forEach(function(btn) {
-  btn.addEventListener('click', function() {
-    document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('tab-active'); });
-    this.classList.add('tab-active');
-    var tab = this.dataset.tab;
-    document.getElementById('panelRooms').style.display = tab === 'rooms' ? 'block' : 'none';
-    document.getElementById('panelNotifies').style.display = tab === 'notifies' ? 'block' : 'none';
-    document.getElementById('panelLogs').style.display = tab === 'logs' ? 'block' : 'none';
-  });
-});
+// ---------- 选项卡切换 ----------
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('tab-active'); });
+  document.querySelector('.tab-btn[data-tab="'+tab+'"]').classList.add('tab-active');
+  document.getElementById('panelRooms').style.display = tab === 'rooms' ? 'block' : 'none';
+  document.getElementById('panelNotifies').style.display = tab === 'notifies' ? 'block' : 'none';
+  document.getElementById('panelLogs').style.display = tab === 'logs' ? 'block' : 'none';
+}
 
+// ---------- 模态框 ----------
 function showModal(title, message, confirmText, cancelText) {
   return new Promise(function(resolve) {
     var overlay = document.getElementById('customModal');
@@ -688,12 +692,16 @@ function showModal(title, message, confirmText, cancelText) {
     document.getElementById('modalConfirmBtn').textContent = confirmText || '确定';
     document.getElementById('modalCancelBtn').textContent = cancelText || '取消';
     overlay.classList.add('active');
-    document.getElementById('modalConfirmBtn').onclick = function() { overlay.classList.remove('active'); resolve(true); };
-    document.getElementById('modalCancelBtn').onclick = function() { overlay.classList.remove('active'); resolve(false); };
-    overlay.onclick = function(e) { if (e.target === overlay) { overlay.classList.remove('active'); resolve(false); } };
+    modalResolve = resolve;
   });
 }
+function closeModal(result) {
+  var overlay = document.getElementById('customModal');
+  overlay.classList.remove('active');
+  if (modalResolve) { modalResolve(result); modalResolve = null; }
+}
 
+// ---------- 消息提示 ----------
 function showMessage(msg, type) {
   type = type || 'info';
   var area = document.getElementById('messageArea');
@@ -703,6 +711,7 @@ function showMessage(msg, type) {
   area.innerHTML = '<div style="padding:0.75rem;border-radius:6px;margin-bottom:0.75rem;background:' + colors[type] + ';border:1px solid ' + borders[type] + ';color:' + textColors[type] + '">' + msg + '</div>';
 }
 
+// ---------- 日志 ----------
 function renderLogs(logs) {
   var container = document.getElementById('logContainer');
   var search = document.getElementById('logSearch').value.toLowerCase();
@@ -727,7 +736,7 @@ async function fetchLogs() {
   } catch(e) { console.error('获取日志失败', e); }
 }
 
-document.getElementById('exportLogsBtn').addEventListener('click', async function() {
+async function exportLogs() {
   var res = await fetch('/logs');
   var data = await res.json();
   var blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
@@ -735,60 +744,99 @@ document.getElementById('exportLogsBtn').addEventListener('click', async functio
   var a = document.createElement('a');
   a.href = url; a.download = 'logs.json'; a.click();
   URL.revokeObjectURL(url);
-});
+}
 
-var logTimer = null;
-document.getElementById('autoRefresh').addEventListener('change', function() {
-  if (this.checked) { logTimer = setInterval(fetchLogs, 5000); fetchLogs(); }
-  else { clearInterval(logTimer); logTimer = null; }
-});
-document.getElementById('refreshLogsBtn').addEventListener('click', fetchLogs);
-document.getElementById('logSearch').addEventListener('input', fetchLogs);
-document.getElementById('logLevelFilter').addEventListener('change', fetchLogs);
-
-document.getElementById('clearLogsBtn').addEventListener('click', async function() {
+async function clearLogsAction() {
   if (await showModal('确认', '确定清除所有日志吗？')) {
     await fetch('/clear-logs', { method: 'POST' });
     showMessage('日志已清除', 'info');
     fetchLogs();
   }
-});
+}
 
-document.getElementById('checkAllBtn').addEventListener('click', function() {
-  var btn = this; btn.disabled = true; btn.textContent = '检查中...';
-  fetch('/monitor').then(function() { location.reload(); }).catch(function() { location.reload(); });
-});
+// ---------- 房间操作 ----------
+function showAddRoomModal() {
+  document.getElementById('addRoomModal').classList.add('active');
+  document.getElementById('roomInput').value = '';
+  setTimeout(function() { document.getElementById('roomInput').focus(); }, 100);
+}
+function closeAddRoomModal() {
+  document.getElementById('addRoomModal').classList.remove('active');
+}
+async function addRoomConfirm() {
+  var roomId = document.getElementById('roomInput').value.trim();
+  if (!roomId) { showMessage('请输入房间号', 'error'); return; }
+  var btn = document.querySelector('#addRoomModal .btn-primary');
+  btn.disabled = true;
+  btn.textContent = '提交中...';
+  try {
+    var formData = new URLSearchParams();
+    formData.append('room_id', roomId);
+    var res = await fetch('/add-room', { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'}, body: formData });
+    if (res.ok) {
+      closeAddRoomModal();
+      showMessage('房间 ' + roomId + ' 已添加', 'info');
+      setTimeout(function() { location.reload(); }, 1500);
+    } else {
+      var err = await res.text();
+      showMessage('添加失败: ' + err, 'error');
+    }
+  } catch(e) { showMessage('添加失败: ' + e.message, 'error'); }
+  btn.disabled = false;
+  btn.textContent = '完成';
+}
 
-document.getElementById('refreshRoomsBtn').addEventListener('click', function() {
-  var btn = this; btn.disabled = true; btn.textContent = '刷新中...';
-  fetch('/monitor').then(function() { location.reload(); }).catch(function() { location.reload(); });
-});
+async function checkAll() {
+  var btn = document.querySelector('.btn-check');
+  btn.disabled = true;
+  btn.textContent = '检查中...';
+  try {
+    await fetch('/monitor');
+    location.reload();
+  } catch(e) { location.reload(); }
+}
 
-document.getElementById('sendLiveBtn').addEventListener('click', async function() {
-  var btn = this; btn.disabled = true; btn.textContent = '发送中...';
+async function refreshRooms() {
+  var btn = document.querySelector('.btn-refresh');
+  btn.disabled = true;
+  btn.textContent = '刷新中...';
+  try {
+    await fetch('/monitor');
+    location.reload();
+  } catch(e) { location.reload(); }
+}
+
+async function sendLiveNotify() {
+  var btn = document.querySelector('.btn-warning');
+  btn.disabled = true;
+  btn.textContent = '发送中...';
   try {
     var res = await fetch('/send-live-notify', { method: 'POST' });
     var data = await res.json();
     showMessage(data.message, data.success ? 'info' : 'error');
   } catch(e) { showMessage('操作失败: ' + e.message, 'error'); }
-  btn.disabled = false; btn.textContent = '模拟开播';
-});
+  btn.disabled = false;
+  btn.textContent = '模拟开播';
+}
 
-document.getElementById('singleCheckBtn').addEventListener('click', async function() {
+async function singleCheck() {
   var roomId = document.getElementById('singleCheckInput').value.trim();
   if (!roomId) { showMessage('请输入房间号', 'error'); return; }
-  var btn = this; btn.disabled = true; btn.textContent = '查询中...';
+  var btn = document.querySelector('.btn-test');
+  btn.disabled = true;
+  btn.textContent = '查询中...';
   try {
     var res = await fetch('/check?room_id=' + encodeURIComponent(roomId));
     var data = await res.json();
     showMessage(JSON.stringify(data, null, 2), 'info');
   } catch(e) { showMessage('查询失败: ' + e.message, 'error'); }
-  btn.disabled = false; btn.textContent = '单查';
-});
+  btn.disabled = false;
+  btn.textContent = '单查';
+}
 
-// 通知协议切换 - 自动填充模板
-document.getElementById('protocolSelect').addEventListener('change', function() {
-  var val = this.value;
+// ---------- 通知配置 ----------
+function updateProtocol() {
+  var val = document.getElementById('protocolSelect').value;
   var apiUrl = document.getElementById('apiUrl');
   var receiverLabel = document.getElementById('receiverLabel');
   var chatId = document.getElementById('chatId');
@@ -819,8 +867,9 @@ document.getElementById('protocolSelect').addEventListener('change', function() 
     chatId.placeholder = '可不填';
     templateArea.value = '{"event":"live_start","anchor":"{{主播}}","title":"{{标题}}","online":{{人气}},"room_id":"{{房间号}}"}';
   }
-});
+}
 
+// ---------- 事件监听（测试/切换） ----------
 document.addEventListener('click', async function(e) {
   var target = e.target;
   if (target.classList.contains('test-btn')) {
@@ -846,55 +895,31 @@ document.addEventListener('click', async function(e) {
   }
 });
 
-document.getElementById('addRoomBtn').addEventListener('click', function() {
-  document.getElementById('addRoomModal').classList.add('active');
-  document.getElementById('roomInput').value = '';
-  document.getElementById('roomInput').focus();
+// ---------- 日志自动刷新 ----------
+var logTimer = null;
+document.getElementById('autoRefresh').addEventListener('change', function() {
+  if (this.checked) { logTimer = setInterval(fetchLogs, 5000); fetchLogs(); }
+  else { clearInterval(logTimer); logTimer = null; }
 });
+document.getElementById('logSearch').addEventListener('input', fetchLogs);
+document.getElementById('logLevelFilter').addEventListener('change', fetchLogs);
 
-document.getElementById('addRoomCancelBtn').addEventListener('click', function() {
-  document.getElementById('addRoomModal').classList.remove('active');
-});
-
-document.getElementById('addRoomConfirmBtn').addEventListener('click', async function() {
-  var roomId = document.getElementById('roomInput').value.trim();
-  if (!roomId) { showMessage('请输入房间号', 'error'); return; }
-  var btn = this;
-  btn.disabled = true;
-  btn.textContent = '提交中...';
-  try {
-    var formData = new URLSearchParams();
-    formData.append('room_id', roomId);
-    var res = await fetch('/add-room', { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'}, body: formData });
-    if (res.ok) {
-      document.getElementById('addRoomModal').classList.remove('active');
-      showMessage('房间 ' + roomId + ' 已添加', 'info');
-      setTimeout(function() { location.reload(); }, 1500);
-    } else {
-      var err = await res.text();
-      showMessage('添加失败: ' + err, 'error');
-    }
-  } catch(e) { showMessage('添加失败: ' + e.message, 'error'); }
-  btn.disabled = false;
-  btn.textContent = '完成';
-});
-
-document.getElementById('addRoomModal').addEventListener('click', function(e) {
-  if (e.target === this) {
-    this.classList.remove('active');
-  }
-});
-
-document.getElementById('roomInput').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') {
-    document.getElementById('addRoomConfirmBtn').click();
-  }
-});
-
+// ---------- 初始化 ----------
 document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('autoRefresh').checked = true;
   logTimer = setInterval(fetchLogs, 5000);
   fetchLogs();
+  // 添加房间模态框回车提交
+  document.getElementById('roomInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { addRoomConfirm(); }
+  });
+  // 关闭模态框点击背景
+  document.getElementById('addRoomModal').addEventListener('click', function(e) {
+    if (e.target === this) { closeAddRoomModal(); }
+  });
+  document.getElementById('customModal').addEventListener('click', function(e) {
+    if (e.target === this) { closeModal(false); }
+  });
 });
 </script>
 </body>
@@ -902,10 +927,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function renderLoginPage(error) {
   error = error || '';
-  return '<!DOCTYPE html>\n<html><head><meta charset="UTF-8"><title>管理登录</title><style>body{font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;background:#f3f4f6}.card{background:white;padding:2rem;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.1);width:100%;max-width:400px}h1{text-align:center}label{display:block;margin-top:1rem}input{width:100%;padding:0.5rem;border:1px solid #ccc;border-radius:6px}button{width:100%;padding:0.5rem;margin-top:1rem;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer}.error{color:red;text-align:center}</style></head>\n<body><div class="card"><h1>管理登录</h1>' + (error ? '<p class="error">' + error + '</p>' : '') + '<form method="POST" action="/login"><label>用户名</label><input type="text" name="username" required><label>密码</label><input type="password" name="password" required><button type="submit">登录</button></form></div></body></html>';
+  return '<!DOCTYPE html>\n<html><head><meta charset="UTF-8"><title>管理登录</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>body{font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;background:#f3f4f6;margin:0;padding:1rem}.card{background:white;padding:2rem;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.1);width:100%;max-width:400px}h1{text-align:center}label{display:block;margin-top:1rem}input{width:100%;padding:0.5rem;border:1px solid #ccc;border-radius:6px;font-size:1rem}button{width:100%;padding:0.5rem;margin-top:1rem;background:#2563eb;color:white;border:none;border-radius:6px;font-size:1rem;cursor:pointer}.error{color:red;text-align:center}</style></head>\n<body><div class="card"><h1>管理登录</h1>' + (error ? '<p class="error">' + error + '</p>' : '') + '<form method="POST" action="/login"><label>用户名</label><input type="text" name="username" required><label>密码</label><input type="password" name="password" required><button type="submit">登录</button></form></div></body></html>';
 }
 
-// ---------- 渲染管理页面 ----------
 async function renderAdminPage(env, message) {
   var roomIds = await getRoomList(env);
   var configs = await getNotifyConfigs(env);
@@ -921,7 +945,6 @@ async function renderAdminPage(env, message) {
     var online = state.last_online || 0;
     var area = state.last_parent_area ? state.last_parent_area + ' - ' + state.last_area : '未知分区';
     var updateTime = state.last_update ? new Date(state.last_update).toLocaleString() : '从未更新';
-    // 修复：删除确认
     roomsHtml += '<div class="room-card"><div class="status-dot" style="background:' + statusColor + '"></div><div class="room-info"><div class="room-id">房间 ' + roomId + '</div><div class="room-title">' + title + '</div><div class="room-meta">' + statusText + ' · 人气 ' + online + ' · ' + area + '</div><div class="room-meta">更新于 ' + updateTime + '</div></div><div class="room-actions"><form method="POST" action="/remove-room" onsubmit="return confirm(\'确定删除房间 \'+this.room_id.value+\' 吗？\')"><input type="hidden" name="room_id" value="' + roomId + '"><button type="submit" class="btn btn-danger btn-sm">删除</button></form></div></div>';
   }
   if (!roomsHtml) roomsHtml = '<div style="grid-column:span 3;text-align:center;padding:1.5rem 0;color:#6b7280">暂无房间，请添加</div>';
@@ -941,7 +964,6 @@ async function renderAdminPage(env, message) {
   return html;
 }
 
-// ---------- Worker 入口 ----------
 export default {
   async fetch(request, env) {
     var url = new URL(request.url);
@@ -1046,7 +1068,6 @@ export default {
         return new Response(JSON.stringify({ success: false, message: e.message }), { status: 500 });
       }
     }
-    // 修复：添加房间直接初始化状态
     if (path === '/add-room' && method === 'POST') {
       var form = await request.formData();
       var roomId = toRoomId(form.get('room_id') || '');
