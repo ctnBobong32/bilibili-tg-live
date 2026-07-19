@@ -7,9 +7,9 @@ workers_dev = true
 preview_urls = true
 
 routes = [
+  { pattern = "live.262832.xyz/*", zone_name = "262832.xyz" },
   "bilibili-tg-live.ctn32.workers.dev/*",
-  "*.bilibili-tg-live.ctn32.workers.dev/*",
-  { pattern = "live.262832.xyz/*", zone_name = "262832.xyz" }
+  "*.bilibili-tg-live.ctn32.workers.dev/*"
 ]
 
 [observability]
