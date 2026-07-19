@@ -3,7 +3,32 @@ main = "_worker.js"
 compatibility_date = "2026-07-20"
 compatibility_flags = ["nodejs_compat"]
 
-# 路由配置
 routes = [
   { pattern = "*", script = "bilibili-tg-live" }
 ]
+
+[observability]
+enabled = false
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = true
+persist = true
+head_sampling_rate = 1
+
+[[kv_namespaces]]
+binding = "ROOM_STORE"
+id = "Live_tg"
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+ADMIN_USER = "admin"
+ADMIN_PASSWORD = "Ow114514"
