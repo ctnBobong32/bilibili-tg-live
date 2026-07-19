@@ -241,12 +241,17 @@ async function buildNotification(roomId, current, env, eventType, extra) {
     userInfo = await fetchUserInfo(current.uid);
   } catch (e) { }
   var anchorName = (userInfo && userInfo.name) ? userInfo.name : '房间 ' + roomId;
+
+  var vipTypeMap = { 0: '无', 1: '月度大会员', 2: '年度大会员' };
+  var vipType = (userInfo && userInfo.vip_type !== undefined) ? vipTypeMap[userInfo.vip_type] || userInfo.vip_type : '';
+  var vipStatus = (userInfo && userInfo.vip_status !== undefined) ? (userInfo.vip_status === 1 ? '已开通' : '未开通') : '';
+
   var baseVars = {
     '主播': anchorName,
     '标题': current.title || '未知',
     'UID': current.uid || '',
     '房间号': current.room_id || roomId,
-    '直播时间': current.live_time || '刚刚',
+    '直播时间': current.live_time || '',
     '直播链接': 'https://live.bilibili.com/' + (current.room_id || roomId),
     '分区': current.area_name || '未知',
     '父分区': current.parent_area_name || '未知',
@@ -257,17 +262,29 @@ async function buildNotification(roomId, current, env, eventType, extra) {
     '关注': (userInfo && userInfo.following) || 0,
     '等级': (userInfo && userInfo.level) || 0,
     '性别': (userInfo && userInfo.sex) || '',
+    'VIP类型': vipType,
+    'VIP状态': vipStatus,
+    '生日': (userInfo && userInfo.birthday) || '',
+    '投稿数': (userInfo && userInfo.archive_count) || 0,
+    '文章数': (userInfo && userInfo.article_count) || 0,
+    '头像': (userInfo && userInfo.face) || '',
   };
+
   var message = '';
   switch (eventType) {
     case 'live_start':
-      message = '[开播] ' + anchorName + ' 开播了\n标题：' + current.title + '\n人气：' + current.online + '\n开播时间：' + (current.live_time || '刚刚') + '\n房间号：' + current.room_id + '\n分区：' + current.parent_area_name + ' - ' + current.area_name + '\n直播间链接：https://live.bilibili.com/' + current.room_id;
+      message = '[开播] ' + anchorName + ' 开播了\n标题：' + current.title + '\n人气：' + current.online + '\n开播时间：' + (current.live_time || '') + '\n房间号：' + current.room_id + '\n分区：' + current.parent_area_name + ' - ' + current.area_name + '\n直播间链接：https://live.bilibili.com/' + current.room_id;
       if (userInfo) {
         if (userInfo.sign) message += '\n签名：' + userInfo.sign;
         if (userInfo.follower !== undefined) message += '\n粉丝：' + userInfo.follower;
         if (userInfo.following !== undefined) message += '\n关注：' + userInfo.following;
         if (userInfo.level !== undefined) message += '\n等级：' + userInfo.level;
         if (userInfo.sex) message += '\n性别：' + userInfo.sex;
+        if (vipType) message += '\nVIP类型：' + vipType;
+        if (vipStatus) message += '\nVIP状态：' + vipStatus;
+        if (userInfo.birthday) message += '\n生日：' + userInfo.birthday;
+        if (userInfo.archive_count !== undefined) message += '\n投稿数：' + userInfo.archive_count;
+        if (userInfo.article_count !== undefined) message += '\n文章数：' + userInfo.article_count;
       }
       break;
     case 'live_end':
@@ -404,7 +421,8 @@ function isAuthenticated(request, env) {
   }
 }
 
-var HTML_TEMPLATE = `<!DOCTYPE html>
+var HTML_TEMPLATE = `
+<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
@@ -525,7 +543,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
         <div class="full" id="apiUrlGroup"><label>API 地址</label><input type="url" name="api_url" id="apiUrl" placeholder="https://api.telegram.org/bot<token>/sendMessage"></div>
         <div class="full" id="tgTokenGroup" style="display:none"><label>Bot Token</label><input type="text" id="tgToken" placeholder="例如：123456:ABC-DEF..."><p style="font-size:0.75rem;color:#6b7280;margin-top:0.2rem">系统将自动构建 API 地址</p></div>
         <div><label id="receiverLabel">接收者 ID</label><input type="text" name="chat_id" id="chatId" placeholder="例如：123456789"></div>
-        <div class="full"><label>通知模板 (可选)</label><textarea name="template" id="templateArea" placeholder="支持 {{主播}} {{标题}} {{人气}} 等变量" rows="2"></textarea></div>
+        <div class="full"><label>通知模板 (可选)</label><textarea name="template" id="templateArea" placeholder="[开播] {{主播}} 开播了\n标题：{{标题}}\n人气：{{人气}}\n开播时间：{{直播时间}}\n房间号：{{房间号}}\n分区：{{分区}}\n直播间链接：{{直播链接}}\n签名：{{签名}}\n粉丝：{{粉丝}}\n关注：{{关注}}\n等级：{{等级}}\n性别：{{性别}}\nVIP类型：{{VIP类型}}\nVIP状态：{{VIP状态}}\n生日：{{生日}}\n投稿数：{{投稿数}}\n文章数：{{文章数}}" rows="6"></textarea></div>
         <div class="full"><button type="submit" class="btn btn-primary" style="width:100%">添加配置</button></div>
       </form>
     </div>
@@ -825,7 +843,6 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
   var logTimer = setInterval(fetchLogs, 5000);
   fetchLogs();
 
-  // 修复：模板只作为 placeholder，不覆盖用户输入
   function updateNotifyForm() {
     if (!protocolSelect) return;
     var val = protocolSelect.value;
@@ -833,25 +850,24 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
       if (apiUrlGroup) apiUrlGroup.style.display = 'none';
       if (tgTokenGroup) tgTokenGroup.style.display = 'block';
       if (apiUrl) apiUrl.placeholder = 'https://api.telegram.org/bot<token>/sendMessage';
-      if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}\\n直播间链接：{{直播链接}}';
+      if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\n标题：{{标题}}\n人气：{{人气}}\n开播时间：{{直播时间}}\n房间号：{{房间号}}\n分区：{{分区}}\n直播间链接：{{直播链接}}\n签名：{{签名}}\n粉丝：{{粉丝}}\n关注：{{关注}}\n等级：{{等级}}\n性别：{{性别}}\nVIP类型：{{VIP类型}}\nVIP状态：{{VIP状态}}\n生日：{{生日}}\n投稿数：{{投稿数}}\n文章数：{{文章数}}';
     } else {
       if (apiUrlGroup) apiUrlGroup.style.display = 'block';
       if (tgTokenGroup) tgTokenGroup.style.display = 'none';
       if (val === 'onebot_private') {
         if (apiUrl) apiUrl.placeholder = 'http://127.0.0.1:5700/send_private_msg';
-        if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}\\n直播间链接：{{直播链接}}';
+        if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\n标题：{{标题}}\n人气：{{人气}}\n开播时间：{{直播时间}}\n房间号：{{房间号}}\n分区：{{分区}}\n直播间链接：{{直播链接}}\n签名：{{签名}}\n粉丝：{{粉丝}}\n关注：{{关注}}\n等级：{{等级}}\n性别：{{性别}}\nVIP类型：{{VIP类型}}\nVIP状态：{{VIP状态}}\n生日：{{生日}}\n投稿数：{{投稿数}}\n文章数：{{文章数}}';
       } else if (val === 'onebot_group') {
         if (apiUrl) apiUrl.placeholder = 'http://127.0.0.1:5700/send_group_msg';
-        if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}\\n直播间链接：{{直播链接}}';
+        if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\n标题：{{标题}}\n人气：{{人气}}\n开播时间：{{直播时间}}\n房间号：{{房间号}}\n分区：{{分区}}\n直播间链接：{{直播链接}}\n签名：{{签名}}\n粉丝：{{粉丝}}\n关注：{{关注}}\n等级：{{等级}}\n性别：{{性别}}\nVIP类型：{{VIP类型}}\nVIP状态：{{VIP状态}}\n生日：{{生日}}\n投稿数：{{投稿数}}\n文章数：{{文章数}}';
       } else if (val === 'discord') {
         if (apiUrl) apiUrl.placeholder = 'https://discord.com/api/webhooks/...';
-        if (templateArea) templateArea.placeholder = '**[开播] {{主播}}**\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}\\n[直播间链接]({{直播链接}})';
+        if (templateArea) templateArea.placeholder = '**[开播] {{主播}}**\n标题：{{标题}}\n人气：{{人气}}\n开播时间：{{直播时间}}\n房间号：{{房间号}}\n分区：{{分区}}\n[直播间链接]({{直播链接}})\n签名：{{签名}}\n粉丝：{{粉丝}}\n关注：{{关注}}\n等级：{{等级}}\n性别：{{性别}}\nVIP类型：{{VIP类型}}\nVIP状态：{{VIP状态}}\n生日：{{生日}}\n投稿数：{{投稿数}}\n文章数：{{文章数}}';
       } else if (val === 'custom_webhook') {
         if (apiUrl) apiUrl.placeholder = 'https://your-server.com/webhook';
-        if (templateArea) templateArea.placeholder = '{"event":"live_start","anchor":"{{主播}}","title":"{{标题}}","online":{{人气}},"room_id":"{{房间号}}","link":"{{直播链接}}"}';
+        if (templateArea) templateArea.placeholder = '{"event":"live_start","anchor":"{{主播}}","title":"{{标题}}","online":{{人气}},"room_id":"{{房间号}}","link":"{{直播链接}}","sign":"{{签名}}","fans":{{粉丝}},"follow":{{关注}},"level":{{等级}},"sex":"{{性别}}","vip_type":"{{VIP类型}}","vip_status":"{{VIP状态}}","birthday":"{{生日}}","archive_count":{{投稿数}},"article_count":{{文章数}}}';
       }
     }
-    // 更新接收者 ID 标签
     var receiverLabel = getEl('receiverLabel');
     var chatId = getEl('chatId');
     if (receiverLabel && chatId) {
@@ -876,7 +892,6 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
     updateNotifyForm();
   }
 
-  // 提交表单时构建完整 API 地址（针对 Telegram）
   var addNotifyForm = getEl('addNotifyForm');
   if (addNotifyForm) {
     addNotifyForm.addEventListener('submit', function(e) {
@@ -893,7 +908,6 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
     });
   }
 
-  // 事件委托（测试/切换按钮）
   document.addEventListener('click', function(e) {
     var target = e.target.closest('button');
     if (!target) return;
@@ -932,7 +946,8 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
 })();
 </script>
 </body>
-</html>`;
+</html>
+`;
 
 function renderLoginPage(error) {
   error = error || '';
@@ -1058,7 +1073,6 @@ export default {
       await addLog('info', '切换通知配置状态 ' + id);
       return new Response(JSON.stringify({ success: true, message: '切换成功' }));
     }
-    // 修复测试通知：优先选取直播房间，无则模拟离线房间
     if (path === '/test-notify' && method === 'POST') {
       var form = await request.formData();
       var id = form.get('config_id');
