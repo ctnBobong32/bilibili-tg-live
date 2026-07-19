@@ -1,0 +1,26 @@
+name: 部署到 Cloudflare Workers
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  部署:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Wrangler
+        run: npm install -g wrangler
+
+      - name: 部署 Worker
+        run: wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: 部署成功提示
+        run: echo "✅ 部署完成！访问 https://live.262832.xyz 查看。"
