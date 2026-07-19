@@ -55,6 +55,7 @@ async function setNotifyConfigs(env, configs) {
 async function addNotifyConfig(env, config) {
   var configs = await getNotifyConfigs(env);
   config.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+  config.enabled = true;
   configs.push(config);
   await setNotifyConfigs(env, configs);
   return config;
@@ -514,9 +515,9 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
             <option value="custom_webhook">自定义 Webhook</option>
           </select>
         </div>
-        <div class="full"><label>API 地址</label><input type="url" name="api_url" id="apiUrl" placeholder="https://api.telegram.org/bot<token>/sendMessage"></div>
+        <div class="full" id="apiUrlGroup"><label>API 地址</label><input type="url" name="api_url" id="apiUrl" placeholder="https://api.telegram.org/bot<token>/sendMessage"></div>
+        <div class="full" id="tgTokenGroup" style="display:none"><label>Bot Token</label><input type="text" id="tgToken" placeholder="例如：123456:ABC-DEF..."><p style="font-size:0.75rem;color:#6b7280;margin-top:0.2rem">系统将自动构建 API 地址</p></div>
         <div><label id="receiverLabel">接收者 ID</label><input type="text" name="chat_id" id="chatId" placeholder="例如：123456789"></div>
-        <div class="full"><label><input type="checkbox" name="enabled" checked value="1"> 启用</label></div>
         <div class="full"><label>通知模板 (可选)</label><textarea name="template" id="templateArea" placeholder="支持 {{主播}} {{标题}} {{人气}} 等变量" rows="2"></textarea></div>
         <div class="full"><button type="submit" class="btn btn-primary" style="width:100%">添加配置</button></div>
       </form>
@@ -819,31 +820,43 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
       var apiUrl = getEl('apiUrl');
       var receiverLabel = getEl('receiverLabel');
       var chatId = getEl('chatId');
+      var apiUrlGroup = getEl('apiUrlGroup');
+      var tgTokenGroup = getEl('tgTokenGroup');
       if (!apiUrl || !receiverLabel || !chatId) return;
       if (val === 'telegram') {
         apiUrl.placeholder = 'https://api.telegram.org/bot<token>/sendMessage';
         receiverLabel.textContent = '接收者 ID (chat_id)';
         chatId.placeholder = '例如：123456789';
+        if (apiUrlGroup) apiUrlGroup.style.display = 'none';
+        if (tgTokenGroup) tgTokenGroup.style.display = 'block';
         if (templateArea) templateArea.value = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
       } else if (val === 'onebot_private') {
         apiUrl.placeholder = 'http://127.0.0.1:5700/send_private_msg';
         receiverLabel.textContent = '用户 ID (user_id)';
         chatId.placeholder = '例如：123456789';
+        if (apiUrlGroup) apiUrlGroup.style.display = 'block';
+        if (tgTokenGroup) tgTokenGroup.style.display = 'none';
         if (templateArea) templateArea.value = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
       } else if (val === 'onebot_group') {
         apiUrl.placeholder = 'http://127.0.0.1:5700/send_group_msg';
         receiverLabel.textContent = '群 ID (group_id)';
         chatId.placeholder = '例如：123456789';
+        if (apiUrlGroup) apiUrlGroup.style.display = 'block';
+        if (tgTokenGroup) tgTokenGroup.style.display = 'none';
         if (templateArea) templateArea.value = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
       } else if (val === 'discord') {
         apiUrl.placeholder = 'https://discord.com/api/webhooks/...';
         receiverLabel.textContent = '无 (使用 Webhook URL)';
         chatId.placeholder = '可不填';
+        if (apiUrlGroup) apiUrlGroup.style.display = 'block';
+        if (tgTokenGroup) tgTokenGroup.style.display = 'none';
         if (templateArea) templateArea.value = '**[开播] {{主播}}**\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
       } else if (val === 'custom_webhook') {
         apiUrl.placeholder = 'https://your-server.com/webhook';
         receiverLabel.textContent = '无 (使用 Webhook URL)';
         chatId.placeholder = '可不填';
+        if (apiUrlGroup) apiUrlGroup.style.display = 'block';
+        if (tgTokenGroup) tgTokenGroup.style.display = 'none';
         if (templateArea) templateArea.value = '{"event":"live_start","anchor":"{{主播}}","title":"{{标题}}","online":{{人气}},"room_id":"{{房间号}}"}';
       }
     });
@@ -975,14 +988,28 @@ export default {
       var protocol = form.get('protocol') || 'telegram';
       var api_url = form.get('api_url');
       var chat_id = form.get('chat_id') || '';
-      var enabled = form.get('enabled') === '1';
       var template = form.get('template') || '';
-      if (!name || !api_url) return new Response('缺少必要字段', { status: 400 });
+      if (!name || !chat_id) return new Response('缺少必要字段', { status: 400 });
+      // 如果是 telegram 且 api_url 为空或占位符，则从 tg_token 构建
+      if (protocol === 'telegram') {
+        var tgToken = form.get('tg_token') || '';
+        if (!tgToken) {
+          // 如果 api_url 已经包含 bot token，则尝试提取
+          if (api_url && api_url.includes('bot') && api_url.includes('/sendMessage')) {
+            // 保持原样
+          } else {
+            return new Response('请输入 Bot Token', { status: 400 });
+          }
+        } else {
+          api_url = 'https://api.telegram.org/bot' + tgToken + '/sendMessage';
+        }
+      }
+      if (!api_url) return new Response('缺少 API 地址', { status: 400 });
       var receiver_key = 'chat_id', message_key = 'text';
       if (protocol === 'onebot_private') { receiver_key = 'user_id'; message_key = 'message'; }
       else if (protocol === 'onebot_group') { receiver_key = 'group_id'; message_key = 'message'; }
       else if (protocol === 'discord' || protocol === 'custom_webhook') { receiver_key = ''; message_key = ''; }
-      await addNotifyConfig(env, { name: name, protocol: protocol, api_url: api_url, chat_id: chat_id, receiver_key: receiver_key, message_key: message_key, enabled: enabled, template: template, extra_params: {} });
+      await addNotifyConfig(env, { name: name, protocol: protocol, api_url: api_url, chat_id: chat_id, receiver_key: receiver_key, message_key: message_key, template: template, extra_params: {} });
       await addLog('info', '添加通知配置 ' + name);
       return new Response(await renderAdminPage(env, '配置 "' + name + '" 已添加'), { headers: { 'Content-Type': 'text/html' } });
     }
@@ -1012,23 +1039,14 @@ export default {
         if (configs[k].id === id) { config = configs[k]; break; }
       }
       if (!config) return new Response('配置不存在', { status: 404 });
-      var roomIds = await getRoomList(env);
-      if (!roomIds.length) return new Response(JSON.stringify({ success: false, message: '房间列表为空' }), { status: 400 });
-      try {
-        var roomId = toRoomId(roomIds[0]);
-        var current = await fetchLiveStatus(roomId);
-        var isLive = CONFIG.IS_LIVE_STATUS.includes(Number(current.live_status));
-        if (!isLive) return new Response(JSON.stringify({ success: false, message: '当前未开播，无法测试' }), { status: 400 });
-        var text = await buildNotification(roomId, current, env, 'live_start');
-        var result = await sendNotificationToConfig(config, text, { event: 'live_start', room_id: roomId, ...current });
-        if (result.success) {
-          await addLog('info', '测试通知成功 ' + config.name);
-          return new Response(JSON.stringify({ success: true, message: '测试通知发送成功 (' + config.name + ')' }));
-        } else {
-          return new Response(JSON.stringify({ success: false, message: '发送失败: ' + result.error }), { status: 500 });
-        }
-      } catch(e) {
-        return new Response(JSON.stringify({ success: false, message: e.message }), { status: 500 });
+      // 发送测试消息（纯文本，不依赖房间）
+      var testText = '这是一条测试消息';
+      var result = await sendNotificationToConfig(config, testText, { test: true });
+      if (result.success) {
+        await addLog('info', '测试通知成功 ' + config.name);
+        return new Response(JSON.stringify({ success: true, message: '测试通知发送成功 (' + config.name + ')' }));
+      } else {
+        return new Response(JSON.stringify({ success: false, message: '发送失败: ' + result.error }), { status: 500 });
       }
     }
     if (path === '/add-room' && method === 'POST') {
