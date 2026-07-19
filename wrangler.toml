@@ -3,6 +3,9 @@ main = "_worker.js"
 compatibility_date = "2026-07-19"
 compatibility_flags = ["nodejs_compat"]
 
+workers_dev = true
+preview_urls = true
+
 routes = [
   "bilibili-tg-live.ctn32.workers.dev/*",
   "*.bilibili-tg-live.ctn32.workers.dev/*",
