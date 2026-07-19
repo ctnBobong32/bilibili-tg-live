@@ -6,12 +6,6 @@ compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 preview_urls = true
 
-routes = [
-  { pattern = "live.262832.xyz/*", zone_id = "2115bcaa342e799af5b0c9b5fe3395aa" },
-  "bilibili-tg-live.ctn32.workers.dev/*",
-  "*.bilibili-tg-live.ctn32.workers.dev/*"
-]
-
 [observability]
 enabled = false
 head_sampling_rate = 1
