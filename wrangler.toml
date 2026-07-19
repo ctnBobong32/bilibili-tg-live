@@ -24,7 +24,7 @@ head_sampling_rate = 1
 
 [[kv_namespaces]]
 binding = "ROOM_STORE"
-id = "Live_tg"
+id = "20f76ff92a9749df88fca03981bb02a2"
 
 [triggers]
 crons = ["* * * * *"]
