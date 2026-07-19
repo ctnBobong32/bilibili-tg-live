@@ -261,7 +261,14 @@ async function buildNotification(roomId, current, env, eventType, extra) {
   var message = '';
   switch (eventType) {
     case 'live_start':
-      message = '[开播] ' + anchorName + ' 开播了\n标题：' + current.title + '\n人气：' + current.online + '\n开播时间：' + (current.live_time || '刚刚') + '\n房间号：' + current.room_id + '\n分区：' + current.parent_area_name + ' - ' + current.area_name;
+      message = '[开播] ' + anchorName + ' 开播了\n标题：' + current.title + '\n人气：' + current.online + '\n开播时间：' + (current.live_time || '刚刚') + '\n房间号：' + current.room_id + '\n分区：' + current.parent_area_name + ' - ' + current.area_name + '\n直播间链接：https://live.bilibili.com/' + current.room_id;
+      if (userInfo) {
+        if (userInfo.sign) message += '\n签名：' + userInfo.sign;
+        if (userInfo.follower !== undefined) message += '\n粉丝：' + userInfo.follower;
+        if (userInfo.following !== undefined) message += '\n关注：' + userInfo.following;
+        if (userInfo.level !== undefined) message += '\n等级：' + userInfo.level;
+        if (userInfo.sex) message += '\n性别：' + userInfo.sex;
+      }
       break;
     case 'live_end':
       message = '[下播] ' + anchorName + ' 直播已结束\n最后人气：' + current.online;
@@ -397,7 +404,6 @@ function isAuthenticated(request, env) {
   }
 }
 
-// ===================== HTML 模板（已修复模板覆盖问题） =====================
 var HTML_TEMPLATE = `<!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -819,7 +825,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
   var logTimer = setInterval(fetchLogs, 5000);
   fetchLogs();
 
-  // ======== 修复：模板只作为 placeholder，不覆盖用户输入 ========
+  // 修复：模板只作为 placeholder，不覆盖用户输入
   function updateNotifyForm() {
     if (!protocolSelect) return;
     var val = protocolSelect.value;
@@ -827,22 +833,22 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
       if (apiUrlGroup) apiUrlGroup.style.display = 'none';
       if (tgTokenGroup) tgTokenGroup.style.display = 'block';
       if (apiUrl) apiUrl.placeholder = 'https://api.telegram.org/bot<token>/sendMessage';
-      if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
+      if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}\\n直播间链接：{{直播链接}}';
     } else {
       if (apiUrlGroup) apiUrlGroup.style.display = 'block';
       if (tgTokenGroup) tgTokenGroup.style.display = 'none';
       if (val === 'onebot_private') {
         if (apiUrl) apiUrl.placeholder = 'http://127.0.0.1:5700/send_private_msg';
-        if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
+        if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}\\n直播间链接：{{直播链接}}';
       } else if (val === 'onebot_group') {
         if (apiUrl) apiUrl.placeholder = 'http://127.0.0.1:5700/send_group_msg';
-        if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
+        if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}\\n直播间链接：{{直播链接}}';
       } else if (val === 'discord') {
         if (apiUrl) apiUrl.placeholder = 'https://discord.com/api/webhooks/...';
-        if (templateArea) templateArea.placeholder = '**[开播] {{主播}}**\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}';
+        if (templateArea) templateArea.placeholder = '**[开播] {{主播}}**\\n标题：{{标题}}\\n人气：{{人气}}\\n房间号：{{房间号}}\\n分区：{{分区}}\\n[直播间链接]({{直播链接}})';
       } else if (val === 'custom_webhook') {
         if (apiUrl) apiUrl.placeholder = 'https://your-server.com/webhook';
-        if (templateArea) templateArea.placeholder = '{"event":"live_start","anchor":"{{主播}}","title":"{{标题}}","online":{{人气}},"room_id":"{{房间号}}"}';
+        if (templateArea) templateArea.placeholder = '{"event":"live_start","anchor":"{{主播}}","title":"{{标题}}","online":{{人气}},"room_id":"{{房间号}}","link":"{{直播链接}}"}';
       }
     }
     // 更新接收者 ID 标签
@@ -867,7 +873,6 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
 
   if (protocolSelect) {
     protocolSelect.addEventListener('change', updateNotifyForm);
-    // 手动触发一次，设置初始占位
     updateNotifyForm();
   }
 
@@ -1021,7 +1026,6 @@ export default {
         var tgToken = form.get('tg_token') || '';
         if (!tgToken) {
           if (api_url && api_url.includes('bot') && api_url.includes('/sendMessage')) {
-            // 保持原样
           } else {
             return new Response('请输入 Bot Token', { status: 400 });
           }
@@ -1054,6 +1058,7 @@ export default {
       await addLog('info', '切换通知配置状态 ' + id);
       return new Response(JSON.stringify({ success: true, message: '切换成功' }));
     }
+    // 修复测试通知：优先选取直播房间，无则模拟离线房间
     if (path === '/test-notify' && method === 'POST') {
       var form = await request.formData();
       var id = form.get('config_id');
@@ -1064,13 +1069,56 @@ export default {
         if (configs[k].id === id) { config = configs[k]; break; }
       }
       if (!config) return new Response('配置不存在', { status: 404 });
-      var testText = '这是一条测试消息';
-      var result = await sendNotificationToConfig(config, testText, { test: true });
-      if (result.success) {
-        await addLog('info', '测试通知成功 ' + config.name);
-        return new Response(JSON.stringify({ success: true, message: '测试通知发送成功 (' + config.name + ')' }));
-      } else {
-        return new Response(JSON.stringify({ success: false, message: '发送失败: ' + result.error }), { status: 500 });
+
+      var roomIds = await getRoomList(env);
+      if (!roomIds.length) return new Response(JSON.stringify({ success: false, message: '房间列表为空' }), { status: 400 });
+
+      var selectedRoomId = null;
+      var isLiveRoom = false;
+      for (var i = 0; i < roomIds.length; i++) {
+        var roomId = toRoomId(roomIds[i]);
+        var state = await getMonitorState(env, roomId);
+        if (state.state === 'LIVE') {
+          selectedRoomId = roomId;
+          isLiveRoom = true;
+          break;
+        }
+      }
+      if (!selectedRoomId) {
+        selectedRoomId = toRoomId(roomIds[0]);
+        isLiveRoom = false;
+      }
+
+      try {
+        var current = await fetchLiveStatus(selectedRoomId);
+        var liveStatus = Number(current.live_status ?? current.livestatus ?? current.liveStatus ?? 0);
+        current.live_status = liveStatus;
+
+        var isLive = CONFIG.IS_LIVE_STATUS.includes(liveStatus);
+        if (!isLive) {
+          var prev = await getMonitorState(env, selectedRoomId);
+          current.title = prev.last_title || current.title || '模拟直播标题';
+          current.online = prev.last_online || 0;
+          current.live_time = prev.last_live_time || new Date().toISOString();
+          current.area_name = prev.last_area || current.area_name || '未知分区';
+          current.parent_area_name = prev.last_parent_area || current.parent_area_name || '未知父分区';
+          current.uid = current.uid || 0;
+        }
+
+        var text = await buildNotification(selectedRoomId, current, env, 'live_start', {});
+        if (!isLive) {
+          text = '[模拟] ' + text;
+        }
+
+        var result = await sendNotificationToConfig(config, text, { event: 'live_start', room_id: selectedRoomId, ...current });
+        if (result.success) {
+          await addLog('info', '测试通知成功 ' + config.name);
+          return new Response(JSON.stringify({ success: true, message: '测试通知发送成功 (' + config.name + ')' }));
+        } else {
+          return new Response(JSON.stringify({ success: false, message: '发送失败: ' + result.error }), { status: 500 });
+        }
+      } catch(e) {
+        return new Response(JSON.stringify({ success: false, message: e.message }), { status: 500 });
       }
     }
     if (path === '/add-room' && method === 'POST') {
