@@ -639,7 +639,19 @@ body { background: var(--bg); color: var(--text); transition: 0.3s; }
             </div>
             <div class="col-12">
               <label class="form-label">通知模板 (可选)</label>
-              <textarea name="template" id="templateArea" class="form-control" rows="6"></textarea>
+              <textarea name="template" id="templateArea" class="form-control" rows="6">[{{事件}}] {{主播}}
+标题：{{标题}}
+房间号：{{房间号}} | UID：{{UID}}
+分区：{{父分区}} - {{分区}}
+人气：{{人气}} | 直播时间：{{直播时间}}
+直播间链接：{{直播链接}}
+封面：{{封面}}
+等级：{{等级}} | 粉丝：{{粉丝}} | 关注：{{关注}} | 性别：{{性别}}
+VIP：{{VIP类型}} ({{VIP状态}})
+生日：{{生日}} | 投稿数：{{投稿数}} | 文章数：{{文章数}}
+签名：{{签名}}
+头像：{{头像}}
+更新时间：{{时间}}</textarea>
             </div>
             <div class="col-12">
               <button type="submit" class="btn btn-primary"><i class="bi bi-plus-circle"></i> 添加配置</button>
@@ -785,60 +797,36 @@ document.addEventListener('DOMContentLoaded', function() {
   logTimer = setInterval(fetchLogs, 5000);
   fetchLogs();
 
-  var DEFAULT_TEMPLATES = {
-    telegram: '[{{事件}}] {{主播}}\n标题：{{标题}}\n人气：{{人气}} | 直播时间：{{直播时间}}\n链接：{{直播链接}}',
-    onebot_private: '[{{事件}}] {{主播}}\n标题：{{标题}}\n房间：{{房间号}} | 人气：{{人气}}',
-    onebot_group: '[{{事件}}] {{主播}}\n标题：{{标题}}\n房间：{{房间号}} | 人气：{{人气}}',
-    discord: '**{{事件}}** 主播: {{主播}}\n标题：{{标题}}\n人气：{{人气}}\n链接：{{直播链接}}',
-    custom_webhook: '{"event":"{{事件}}","anchor":"{{主播}}","title":"{{标题}}","room":"{{房间号}}","online":"{{人气}}","cover":"{{封面}}"}'
-  };
-
+  // 协议切换（只控制显示/隐藏，不覆盖模板）
   function updateNotifyForm() {
     var val = document.getElementById('protocolSelect').value;
     var tgTokenGroup = document.getElementById('tgTokenGroup');
-    var template = document.getElementById('templateArea');
     var receiverLabel = document.getElementById('receiverLabel');
     var chatId = document.getElementById('chatId');
-
-    if (!template.dataset.userModified || template.dataset.userModified === 'false') {
-      template.value = CONFIG.DEFAULT_TEMPLATE;
-      template.dataset.userModified = 'false';
-    }
 
     if (val === 'telegram') {
       tgTokenGroup.style.display = 'block';
       receiverLabel.textContent = '接收者 ID (chat_id)';
       chatId.placeholder = '例如：123456789';
-      template.placeholder = '示例模板（可修改）';
     } else {
       tgTokenGroup.style.display = 'none';
       if (val === 'onebot_private') {
         receiverLabel.textContent = '用户 ID (user_id)';
         chatId.placeholder = '例如：123456789';
-        template.placeholder = '示例模板（可修改）';
       } else if (val === 'onebot_group') {
         receiverLabel.textContent = '群 ID (group_id)';
         chatId.placeholder = '例如：123456789';
-        template.placeholder = '示例模板（可修改）';
-      } else if (val === 'discord') {
-        receiverLabel.textContent = '无 (使用 Webhook URL)';
+      } else {
+        receiverLabel.textContent = '接收者 ID (可选)';
         chatId.placeholder = '可不填';
-        template.placeholder = '示例模板（可修改）';
-      } else if (val === 'custom_webhook') {
-        receiverLabel.textContent = '无 (使用 Webhook URL)';
-        chatId.placeholder = '可不填';
-        template.placeholder = '示例模板（可修改）';
       }
     }
-
-    template.addEventListener('input', function() {
-      this.dataset.userModified = 'true';
-    }, { once: true });
   }
 
   document.getElementById('protocolSelect').addEventListener('change', updateNotifyForm);
   updateNotifyForm();
 
+  // 提交表单（添加配置）
   document.getElementById('addNotifyForm').addEventListener('submit', function(e) {
     e.preventDefault();
     var form = this;
@@ -854,6 +842,7 @@ document.addEventListener('DOMContentLoaded', function() {
       .catch(function(err){ showMessage('添加失败: ' + (err.response ? err.response.data : err.message), 'error'); });
   });
 
+  // 事件委托处理所有按钮
   document.addEventListener('click', function(e) {
     var btn = e.target.closest('button');
     if (!btn) return;
