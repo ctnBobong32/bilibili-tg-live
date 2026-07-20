@@ -1,540 +1,479 @@
 var CONFIG = {
-    MAIN_API: 'https://uapis.cn/api/v1/social/bilibili/liveroom',
-    USER_API: 'https://uapis.cn/api/v1/social/bilibili/userinfo',
-    IS_LIVE_STATUS: [1],
-    CACHE_TTL: 86400,
-    USER_INFO_TTL: 86400,
-    MAX_LOG_ENTRIES: 500,
-    POPULARITY_MILESTONES: [1000, 5000, 10000, 50000, 100000, 500000, 1000000],
-    LIVE_CACHE_TTL: 30,
-    DEFAULT_TEMPLATE: '[{{事件}}] 主播: {{主播}} 标题: {{标题}} 房间号: {{房间号}} 分区: {{父分区}} - {{分区}} 人气: {{人气}} 直播时间: {{直播时间}} 直播链接: {{直播链接}} 封面: {{封面}} UID: {{UID}} 等级: {{等级}} 粉丝: {{粉丝}} 签名: {{签名}}'
+  MAIN_API: 'https://uapis.cn/api/v1/social/bilibili/liveroom',
+  USER_API: 'https://uapis.cn/api/v1/social/bilibili/userinfo',
+  IS_LIVE_STATUS: [1],
+  CACHE_TTL: 3600,
+  USER_INFO_TTL: 86400,
+  MAX_LOG_ENTRIES: 200,
+  LIVE_CACHE_TTL: 30,
+  MAX_LEVEL: 6,
+  POPULARITY_MILESTONES: [1000, 5000, 10000, 50000, 100000, 500000, 1000000],
+  DEFAULT_TEMPLATE: '[{{事件}}] 主播: {{主播}} 标题: {{标题}} 房间号: {{房间号}} 分区: {{父分区}} - {{分区}} 人气: {{人气}} 直播时间: {{直播时间}} 链接: {{直播链接}} 封面: {{封面}} UID: {{UID}} 等级: {{等级}} 粉丝: {{粉丝}} 签名: {{签名}}'
 };
 
 function toRoomId(id) {
-    return String(id).trim();
+  return String(id).trim();
 }
 
 async function getRoomList(env) {
-    var val = await env.ROOM_STORE.get('rooms', 'json');
-    return val || [];
+  var val = await env.ROOM_STORE.get('rooms', 'json');
+  return val || [];
 }
 
 async function setRoomList(env, rooms) {
-    await env.ROOM_STORE.put('rooms', JSON.stringify(rooms));
+  await env.ROOM_STORE.put('rooms', JSON.stringify(rooms));
 }
 
 async function addRoom(env, roomId) {
-    roomId = toRoomId(roomId);
-    var rooms = await getRoomList(env);
-    rooms = rooms.map(String);
-    if (!rooms.includes(roomId)) {
-        rooms.push(roomId);
-        await setRoomList(env, rooms);
-    }
-    await clearPageCache();
-    return rooms;
+  roomId = toRoomId(roomId);
+  var rooms = await getRoomList(env);
+  rooms = rooms.map(String);
+  if (!rooms.includes(roomId)) {
+    rooms.push(roomId);
+    await setRoomList(env, rooms);
+  }
+  await clearPageCache();
+  return rooms;
 }
 
 async function removeRoom(env, roomId) {
-    roomId = toRoomId(roomId);
-    var rooms = await getRoomList(env);
-    rooms = rooms.filter(function(id) {
-        return String(id) !== roomId;
-    });
-    await setRoomList(env, rooms);
-    await env.ROOM_STORE.delete('monitor:' + roomId);
-    await clearPageCache();
-    return rooms;
+  roomId = toRoomId(roomId);
+  var rooms = await getRoomList(env);
+  rooms = rooms.filter(function(id) { return String(id) !== roomId; });
+  await setRoomList(env, rooms);
+  await env.ROOM_STORE.delete('monitor:' + roomId);
+  await clearPageCache();
+  return rooms;
 }
 
 async function getNotifyConfigs(env) {
-    var val = await env.ROOM_STORE.get('notify_configs', 'json');
-    return val || [];
+  var val = await env.ROOM_STORE.get('notify_configs', 'json');
+  return val || [];
 }
 
 async function setNotifyConfigs(env, configs) {
-    await env.ROOM_STORE.put('notify_configs', JSON.stringify(configs));
+  await env.ROOM_STORE.put('notify_configs', JSON.stringify(configs));
 }
 
 async function addNotifyConfig(env, config) {
-    var configs = await getNotifyConfigs(env);
-    config.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-    config.enabled = true;
-    configs.push(config);
-    await setNotifyConfigs(env, configs);
-    return config;
+  var configs = await getNotifyConfigs(env);
+  config.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+  config.enabled = true;
+  configs.push(config);
+  await setNotifyConfigs(env, configs);
+  return config;
 }
 
 async function deleteNotifyConfig(env, id) {
-    var configs = await getNotifyConfigs(env);
-    configs = configs.filter(function(c) {
-        return c.id !== id;
-    });
-    await setNotifyConfigs(env, configs);
+  var configs = await getNotifyConfigs(env);
+  configs = configs.filter(function(c) { return c.id !== id; });
+  await setNotifyConfigs(env, configs);
 }
 
 async function toggleNotifyConfig(env, id) {
-    var configs = await getNotifyConfigs(env);
-    var found = false;
-    var updated = configs.map(function(c) {
-        if (c.id === id) {
-            found = true;
-            return {
-                ...c,
-                enabled: !c.enabled
-            };
-        }
-        return c;
-    });
-    if (!found) throw new Error('配置不存在');
-    await setNotifyConfigs(env, updated);
+  var configs = await getNotifyConfigs(env);
+  var found = false;
+  var updated = configs.map(function(c) {
+    if (c.id === id) { found = true; return { ...c, enabled: !c.enabled }; }
+    return c;
+  });
+  if (!found) throw new Error('配置不存在');
+  await setNotifyConfigs(env, updated);
 }
 
 async function getMonitorState(env, roomId) {
-    roomId = toRoomId(roomId);
-    var key = 'monitor:' + roomId;
-    var val = await env.ROOM_STORE.get(key, 'json');
-    if (val) return val;
-    return {
-        room_id: roomId,
-        state: 'OFFLINE',
-        last_title: '',
-        last_cover: '',
-        last_area: '',
-        last_parent_area: '',
-        last_online: 0,
-        last_live_time: '',
-        last_events: [],
-        last_check: 0
-    };
+  roomId = toRoomId(roomId);
+  var key = 'monitor:' + roomId;
+  var val = await env.ROOM_STORE.get(key, 'json');
+  if (val) return val;
+  return {
+    room_id: roomId,
+    state: 'OFFLINE',
+    last_title: '',
+    last_cover: '',
+    last_area: '',
+    last_parent_area: '',
+    last_online: 0,
+    last_live_time: '',
+    last_events: [],
+    last_check: 0
+  };
 }
 
 async function setMonitorState(env, roomId, state) {
-    roomId = toRoomId(roomId);
-    var key = 'monitor:' + roomId;
-    state.last_update = new Date().toISOString();
-    state.last_check = Date.now();
-    state.version = 3;
-    await env.ROOM_STORE.put(key, JSON.stringify(state));
+  roomId = toRoomId(roomId);
+  var key = 'monitor:' + roomId;
+  state.last_update = new Date().toISOString();
+  state.last_check = Date.now();
+  state.version = 3;
+  await env.ROOM_STORE.put(key, JSON.stringify(state));
 }
 
 function buildCacheKey() {
-    var parts = Array.prototype.slice.call(arguments);
-    return parts.join(':');
+  var parts = Array.prototype.slice.call(arguments);
+  return parts.join(':');
 }
 
 async function getCache(key) {
-    var cache = caches.default;
-    var req = new Request('https://cache/' + key);
-    var resp = await cache.match(req);
-    if (resp && resp.ok) return resp.json();
-    return null;
+  var cache = caches.default;
+  var req = new Request('https://cache/' + key);
+  var resp = await cache.match(req);
+  if (resp && resp.ok) return resp.json();
+  return null;
 }
 
 async function setCache(key, data, ttl) {
-    ttl = ttl || CONFIG.CACHE_TTL;
-    var cache = caches.default;
-    var resp = new Response(JSON.stringify(data), {
-        headers: {
-            'Content-Type': 'application/json',
-            'Cache-Control': 'max-age=' + ttl
-        }
-    });
-    await cache.put(new Request('https://cache/' + key), resp);
+  ttl = ttl || CONFIG.CACHE_TTL;
+  var cache = caches.default;
+  var resp = new Response(JSON.stringify(data), {
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'max-age=' + ttl }
+  });
+  await cache.put(new Request('https://cache/' + key), resp);
 }
 
 async function clearPageCache() {
-    var cache = caches.default;
-    await cache.delete(new Request('https://cache/admin'));
+  var cache = caches.default;
+  await cache.delete(new Request('https://cache/admin'));
 }
 
-async function getLogs() {
-    return (await getCache('logs')) || [];
+// 日志操作 - 使用 KV 存储
+async function getLogs(env) {
+  var data = await env.ROOM_STORE.get('system_logs', 'json');
+  return data || [];
 }
 
-async function addLog(level, message) {
-    var timestamp = new Date().toISOString();
-    var entry = {
-        time: timestamp,
-        level: level,
-        message: message
-    };
-    if (level === 'error') console.error('[' + timestamp + '] [' + level.toUpperCase() + '] ' + message);
-    else if (level === 'warn') console.warn('[' + timestamp + '] [' + level.toUpperCase() + '] ' + message);
-    else console.log('[' + timestamp + '] [' + level.toUpperCase() + '] ' + message);
-    var logs = await getLogs();
-    logs.unshift(entry);
-    if (logs.length > CONFIG.MAX_LOG_ENTRIES) logs.length = CONFIG.MAX_LOG_ENTRIES;
-    await setCache('logs', logs, 86400);
+async function saveLogs(env, logs) {
+  await env.ROOM_STORE.put('system_logs', JSON.stringify(logs));
 }
 
-async function clearLogs() {
-    await setCache('logs', [], 86400);
-    await addLog('info', '日志已清除');
+async function addLog(level, message, env) {
+  var timestamp = new Date().toISOString();
+  var entry = { time: timestamp, level: level, message: message };
+  console.log('[' + timestamp + '] [' + level.toUpperCase() + '] ' + message);
+  var logs = await getLogs(env);
+  logs.unshift(entry);
+  if (logs.length > CONFIG.MAX_LOG_ENTRIES) {
+    logs.length = CONFIG.MAX_LOG_ENTRIES;
+  }
+  await saveLogs(env, logs);
+}
+
+async function clearLogs(env) {
+  await saveLogs(env, []);
+  await addLog('info', '日志已清除', env);
 }
 
 async function fetchLiveStatus(roomId) {
-    roomId = toRoomId(roomId);
-    var url = CONFIG.MAIN_API + '?room_id=' + encodeURIComponent(roomId);
-    var resp = await fetch(url, {
-        headers: {
-            'User-Agent': 'CloudflareWorker/1.0',
-            'Accept': 'application/json'
-        }
-    });
-    if (!resp.ok) throw new Error('UAPI请求失败 (' + resp.status + ')');
-    var data = await resp.json();
-    if (!data.room_id) throw new Error('UAPI返回数据缺少room_id');
-    return data;
+  roomId = toRoomId(roomId);
+  var url = CONFIG.MAIN_API + '?room_id=' + encodeURIComponent(roomId);
+  var resp = await fetch(url, {
+    headers: { 'User-Agent': 'CloudflareWorker/1.0', 'Accept': 'application/json' }
+  });
+  if (!resp.ok) throw new Error('UAPI请求失败 (' + resp.status + ')');
+  var data = await resp.json();
+  if (!data.room_id) throw new Error('UAPI返回数据缺少room_id');
+  return data;
 }
 
 async function fetchUserInfo(uid) {
-    var cacheKey = buildCacheKey('userinfo', uid);
-    var cached = await getCache(cacheKey);
-    if (cached) return cached;
-    var url = CONFIG.USER_API + '?uid=' + encodeURIComponent(uid);
-    var resp = await fetch(url, {
-        headers: {
-            'User-Agent': 'CloudflareWorker/1.0',
-            'Accept': 'application/json'
-        }
-    });
-    if (!resp.ok) throw new Error('用户信息API请求失败 (' + resp.status + ')');
-    var data = await resp.json();
-    if (!data.mid) throw new Error('用户信息API返回缺少mid');
-    await setCache(cacheKey, data, CONFIG.USER_INFO_TTL);
-    return data;
+  var cacheKey = buildCacheKey('userinfo', uid);
+  var cached = await getCache(cacheKey);
+  if (cached) return cached;
+  var url = CONFIG.USER_API + '?uid=' + encodeURIComponent(uid);
+  var resp = await fetch(url, {
+    headers: { 'User-Agent': 'CloudflareWorker/1.0', 'Accept': 'application/json' }
+  });
+  if (!resp.ok) throw new Error('用户信息API请求失败 (' + resp.status + ')');
+  var data = await resp.json();
+  if (!data.mid) throw new Error('用户信息API返回缺少mid');
+  await setCache(cacheKey, data, CONFIG.USER_INFO_TTL);
+  return data;
 }
 
 async function sendNotificationToConfig(config, text, extra) {
-    extra = extra || {};
-    try {
-        var payload = {};
-        var receiverKey = config.receiver_key || 'chat_id';
-        var messageKey = config.message_key || 'text';
-        if (config.protocol === 'discord') {
-            payload = {
-                content: text
-            };
-        } else if (config.protocol === 'custom_webhook') {
-            payload = extra;
-        } else {
-            payload[receiverKey] = config.chat_id;
-            payload[messageKey] = text;
-        }
-        if (config.extra_params) Object.assign(payload, config.extra_params);
-        var resp = await fetch(config.api_url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-        });
-        if (resp.ok) {
-            await addLog('info', '通知发送成功 (' + config.name + ')');
-            return {
-                success: true
-            };
-        } else {
-            var errText = await resp.text();
-            await addLog('error', '通知发送失败 (' + config.name + '): HTTP ' + resp.status + ' ' + errText);
-            return {
-                success: false,
-                error: errText
-            };
-        }
-    } catch (e) {
-        await addLog('error', '通知发送异常 (' + config.name + '): ' + e.message);
-        return {
-            success: false,
-            error: e.message
-        };
+  extra = extra || {};
+  try {
+    var payload = {};
+    var receiverKey = config.receiver_key || 'chat_id';
+    var messageKey = config.message_key || 'text';
+    if (config.protocol === 'discord') {
+      payload = { content: text };
+    } else if (config.protocol === 'custom_webhook') {
+      payload = extra;
+    } else {
+      payload[receiverKey] = config.chat_id;
+      payload[messageKey] = text;
     }
+    if (config.extra_params) Object.assign(payload, config.extra_params);
+    var resp = await fetch(config.api_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (resp.ok) {
+      return { success: true };
+    } else {
+      var errText = await resp.text();
+      return { success: false, error: errText };
+    }
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 }
 
 async function sendNotification(text, env, extra) {
-    extra = extra || {};
-    var configs = await getNotifyConfigs(env);
-    var enabled = configs.filter(function(c) {
-        return c.enabled !== false;
-    });
-    if (enabled.length === 0) {
-        await addLog('warn', '没有启用的通知配置');
-        return false;
-    }
-    var success = false;
-    for (var i = 0; i < enabled.length; i++) {
-        var result = await sendNotificationToConfig(enabled[i], text, extra);
-        if (result.success) success = true;
-    }
-    return success;
+  extra = extra || {};
+  var configs = await getNotifyConfigs(env);
+  var enabled = configs.filter(function(c) { return c.enabled !== false; });
+  if (enabled.length === 0) {
+    await addLog('warn', '没有启用的通知配置', env);
+    return false;
+  }
+  var success = false;
+  for (var i = 0; i < enabled.length; i++) {
+    var result = await sendNotificationToConfig(enabled[i], text, extra);
+    if (result.success) success = true;
+  }
+  return success;
+}
+
+function formatLevel(level) {
+  var lv = parseInt(level || 0);
+  if (lv < 1) lv = 1;
+  if (lv > CONFIG.MAX_LEVEL) lv = CONFIG.MAX_LEVEL;
+  return 'LV ' + lv;
+}
+
+function normalizeCover(url) {
+  if (!url) return '';
+  return url.split('?')[0].trim();
 }
 
 function renderTemplate(template, vars) {
-    if (!template) {
-        template = CONFIG.DEFAULT_TEMPLATE;
+  if (!template) {
+    template = CONFIG.DEFAULT_TEMPLATE;
+  }
+  return template.replace(/\{\{(.*?)\}\}/g, function(match, key) {
+    key = key.trim();
+    if (vars[key] !== undefined && vars[key] !== null) {
+      return String(vars[key]);
     }
-    return template.replace(/\{\{(.*?)\}\}/g, function(match, key) {
-        key = key.trim();
-        if (vars[key] !== undefined && vars[key] !== null) {
-            return String(vars[key]);
-        }
-        return '';
-    });
+    return '';
+  });
 }
 
 async function buildNotification(roomId, current, env, eventType, extra) {
-    extra = extra || {};
-    var userInfo = null;
-    try {
-        userInfo = await fetchUserInfo(current.uid);
-    } catch (e) {}
-    var anchorName = (userInfo && userInfo.name) ? userInfo.name : '房间 ' + roomId;
+  extra = extra || {};
+  var userInfo = null;
+  try {
+    userInfo = await fetchUserInfo(current.uid);
+  } catch (e) { }
+  var anchorName = (userInfo && userInfo.name) ? userInfo.name : '房间 ' + roomId;
 
-    var vipTypeMap = {
-        0: '无',
-        1: '月度大会员',
-        2: '年度大会员'
-    };
-    var vipType = (userInfo && userInfo.vip_type !== undefined) ? vipTypeMap[userInfo.vip_type] || userInfo.vip_type : '';
-    var vipStatus = (userInfo && userInfo.vip_status !== undefined) ? (userInfo.vip_status === 1 ? '已开通' : '未开通') : '';
+  var vipTypeMap = { 0: '无', 1: '月度大会员', 2: '年度大会员' };
+  var vipType = (userInfo && userInfo.vip_type !== undefined) ? vipTypeMap[userInfo.vip_type] || userInfo.vip_type : '';
+  var vipStatus = (userInfo && userInfo.vip_status !== undefined) ? (userInfo.vip_status === 1 ? '已开通' : '未开通') : '';
 
-    var levelDisplay = (userInfo && userInfo.level) ? 'LV ' + Math.min(Number(userInfo.level), 6) : 'LV 0';
+  var levelDisplay = formatLevel(userInfo ? userInfo.level : 0);
 
-    var baseVars = {
-        '事件': eventType,
-        '主播': anchorName,
-        '标题': current.title || '未知',
-        'UID': current.uid || '',
-        '房间号': current.room_id || roomId,
-        '直播时间': current.live_time || '',
-        '直播链接': 'https://live.bilibili.com/' + (current.room_id || roomId),
-        '分区': current.area_name || '未知',
-        '父分区': current.parent_area_name || '未知',
-        '人气': current.online || 0,
-        '封面': current.user_cover || '',
-        '签名': (userInfo && userInfo.sign) || '',
-        '粉丝': (userInfo && userInfo.follower) || 0,
-        '关注': (userInfo && userInfo.following) || 0,
-        '等级': levelDisplay,
-        '性别': (userInfo && userInfo.sex) || '',
-        'VIP类型': vipType,
-        'VIP状态': vipStatus,
-        '生日': (userInfo && userInfo.birthday) || '',
-        '投稿数': (userInfo && userInfo.archive_count) || 0,
-        '文章数': (userInfo && userInfo.article_count) || 0,
-        '头像': (userInfo && userInfo.face) || '',
-    };
+  var baseVars = {
+    '事件': eventType,
+    '主播': anchorName,
+    '标题': current.title || '未知',
+    'UID': current.uid || '',
+    '房间号': current.room_id || roomId,
+    '直播时间': current.live_time || '',
+    '直播链接': 'https://live.bilibili.com/' + (current.room_id || roomId),
+    '分区': current.area_name || '未知',
+    '父分区': current.parent_area_name || '未知',
+    '人气': current.online || 0,
+    '封面': current.user_cover || '',
+    '签名': (userInfo && userInfo.sign) || '',
+    '粉丝': (userInfo && userInfo.follower) || 0,
+    '关注': (userInfo && userInfo.following) || 0,
+    '等级': levelDisplay,
+    '性别': (userInfo && userInfo.sex) || '',
+    'VIP类型': vipType,
+    'VIP状态': vipStatus,
+    '生日': (userInfo && userInfo.birthday) || '',
+    '投稿数': (userInfo && userInfo.archive_count) || 0,
+    '文章数': (userInfo && userInfo.article_count) || 0,
+    '头像': (userInfo && userInfo.face) || '',
+    '时间': new Date().toLocaleString()
+  };
 
-    var message = '';
-    switch (eventType) {
-        case 'live_start':
-            message = '[开播] ' + anchorName + ' 开播了\n标题：' + current.title + '\n人气：' + current.online + '\n开播时间：' + (current.live_time || '') + '\n房间号：' + current.room_id + '\n分区：' + current.parent_area_name + ' - ' + current.area_name + '\n直播间链接：https://live.bilibili.com/' + current.room_id;
-            if (userInfo) {
-                if (userInfo.sign) message += '\n签名：' + userInfo.sign;
-                if (userInfo.follower !== undefined) message += '\n粉丝：' + userInfo.follower;
-                if (userInfo.following !== undefined) message += '\n关注：' + userInfo.following;
-                if (userInfo.level !== undefined) message += '\n等级：' + levelDisplay;
-                if (userInfo.sex) message += '\n性别：' + userInfo.sex;
-                if (vipType) message += '\nVIP类型：' + vipType;
-                if (vipStatus) message += '\nVIP状态：' + vipStatus;
-                if (userInfo.birthday) message += '\n生日：' + userInfo.birthday;
-                if (userInfo.archive_count !== undefined) message += '\n投稿数：' + userInfo.archive_count;
-                if (userInfo.article_count !== undefined) message += '\n文章数：' + userInfo.article_count;
-            }
-            break;
-        case 'live_end':
-            message = '[下播] ' + anchorName + ' 直播已结束\n最后人气：' + current.online;
-            break;
-        case 'title_change':
-            message = '[标题修改] ' + anchorName + ' 修改了直播标题\n旧标题：' + extra.old_title + '\n新标题：' + current.title;
-            break;
-        case 'cover_change':
-            message = '[封面变化] ' + anchorName + ' 更新了直播封面\n新封面：' + current.user_cover;
-            break;
-        case 'area_change':
-            message = '[分区切换] ' + anchorName + ' 切换了直播分区\n旧分区：' + extra.old_parent_area + ' - ' + extra.old_area + '\n新分区：' + current.parent_area_name + ' - ' + current.area_name;
-            break;
-        case 'popularity_milestone':
-            message = '[人气里程碑] ' + anchorName + ' 人气达到 ' + extra.milestone + '！当前人气：' + current.online;
-            break;
-        default:
-            message = text;
+  var message = '';
+  switch (eventType) {
+    case 'live_start':
+      message = '[开播] ' + anchorName + ' 开播了\n标题：' + current.title + '\n人气：' + current.online + '\n开播时间：' + (current.live_time || '') + '\n房间号：' + current.room_id + '\n分区：' + current.parent_area_name + ' - ' + current.area_name + '\n直播间链接：https://live.bilibili.com/' + current.room_id;
+      if (userInfo) {
+        if (userInfo.sign) message += '\n签名：' + userInfo.sign;
+        if (userInfo.follower !== undefined) message += '\n粉丝：' + userInfo.follower;
+        if (userInfo.following !== undefined) message += '\n关注：' + userInfo.following;
+        if (userInfo.level !== undefined) message += '\n等级：' + levelDisplay;
+        if (userInfo.sex) message += '\n性别：' + userInfo.sex;
+        if (vipType) message += '\nVIP类型：' + vipType;
+        if (vipStatus) message += '\nVIP状态：' + vipStatus;
+        if (userInfo.birthday) message += '\n生日：' + userInfo.birthday;
+        if (userInfo.archive_count !== undefined) message += '\n投稿数：' + userInfo.archive_count;
+        if (userInfo.article_count !== undefined) message += '\n文章数：' + userInfo.article_count;
+      }
+      break;
+    case 'live_end':
+      message = '[下播] ' + anchorName + ' 直播已结束\n最后人气：' + current.online;
+      break;
+    case 'title_change':
+      message = '[标题修改] ' + anchorName + ' 修改了直播标题\n旧标题：' + extra.old_title + '\n新标题：' + current.title;
+      break;
+    case 'cover_change':
+      message = '[封面变化] ' + anchorName + ' 更新了直播封面\n新封面：' + current.user_cover;
+      break;
+    case 'area_change':
+      message = '[分区切换] ' + anchorName + ' 切换了直播分区\n旧分区：' + extra.old_parent_area + ' - ' + extra.old_area + '\n新分区：' + current.parent_area_name + ' - ' + current.area_name;
+      break;
+    case 'popularity_milestone':
+      message = '[人气里程碑] ' + anchorName + ' 人气达到 ' + extra.milestone + '！当前人气：' + current.online;
+      break;
+    default:
+      message = text;
+  }
+
+  var configs = await getNotifyConfigs(env);
+  var template = null;
+  for (var i = 0; i < configs.length; i++) {
+    if (configs[i].template && configs[i].template.trim()) {
+      template = configs[i].template;
+      break;
     }
-
-    var configs = await getNotifyConfigs(env);
-    var template = null;
-    for (var i = 0; i < configs.length; i++) {
-        if (configs[i].template && configs[i].template.trim()) {
-            template = configs[i].template;
-            break;
-        }
-    }
-    if (!template) {
-        template = CONFIG.DEFAULT_TEMPLATE;
-    }
-    return renderTemplate(template, baseVars);
+  }
+  if (!template) {
+    template = CONFIG.DEFAULT_TEMPLATE;
+  }
+  return renderTemplate(template, baseVars);
 }
 
 async function processRoom(roomId, env, options) {
-    options = options || {};
-    roomId = toRoomId(roomId);
-    var current;
-    try {
-        current = await fetchLiveStatus(roomId);
-        var liveStatus = Number(current.live_status ?? current.livestatus ?? current.liveStatus ?? 0);
-        current.live_status = liveStatus;
-        var prev = await getMonitorState(env, roomId);
-        await addLog('info', `[${roomId}] 检查: API状态=${liveStatus}, 人气=${current.online || 0}, 标题=${current.title || '未知'}, 旧状态=${prev.state || '未知'}`);
-    } catch (e) {
-        await addLog('error', '[' + roomId + '] 获取状态失败: ' + e.message);
-        return {
-            error: e.message
-        };
-    }
-    var isLive = CONFIG.IS_LIVE_STATUS.includes(current.live_status);
-    var state = isLive ? 'LIVE' : 'OFFLINE';
-    var oldState = prev.state || 'OFFLINE';
-    var events = [];
+  options = options || {};
+  roomId = toRoomId(roomId);
+  var current;
+  try {
+    current = await fetchLiveStatus(roomId);
+    var liveStatus = Number(current.live_status ?? current.livestatus ?? current.liveStatus ?? 0);
+    current.live_status = liveStatus;
+    var prev = await getMonitorState(env, roomId);
+    await addLog('info', '[' + roomId + '] 检查: API状态=' + liveStatus + ', 人气=' + (current.online || 0) + ', 标题=' + (current.title || '未知') + ', 旧状态=' + (prev.state || '未知'), env);
+  } catch (e) {
+    await addLog('error', '[' + roomId + '] 获取状态失败: ' + e.message, env);
+    return { error: e.message };
+  }
+  var isLive = CONFIG.IS_LIVE_STATUS.includes(current.live_status);
+  var state = isLive ? 'LIVE' : 'OFFLINE';
+  var oldState = prev.state || 'OFFLINE';
+  var events = [];
 
-    if (oldState !== state) {
-        await addLog('info', `[${roomId}] 状态变化: ${oldState} -> ${state}`);
-        if (state === 'LIVE') {
-            events.push({
-                type: 'live_start',
-                data: current
-            });
-        } else {
-            events.push({
-                type: 'live_end',
-                data: current
-            });
-        }
-    } else if (state === 'LIVE') {
-        var oldTitle = (prev.last_title || '').trim();
-        var newTitle = (current.title || '').trim();
-        if (oldTitle && oldTitle !== newTitle) {
-            events.push({
-                type: 'title_change',
-                data: current,
-                old_title: prev.last_title || ''
-            });
-        }
-        if (prev.last_cover && prev.last_cover !== current.user_cover) {
-            events.push({
-                type: 'cover_change',
-                data: current,
-                old_cover: prev.last_cover
-            });
-        }
-        if (String(prev.last_area || '') !== String(current.area_name || '') ||
-            String(prev.last_parent_area || '') !== String(current.parent_area_name || '')) {
-            events.push({
-                type: 'area_change',
-                data: current,
-                old_area: prev.last_area || '',
-                old_parent_area: prev.last_parent_area || ''
-            });
-        }
-        var prevOnline = prev.last_online || 0;
-        for (var i = 0; i < CONFIG.POPULARITY_MILESTONES.length; i++) {
-            var milestone = CONFIG.POPULARITY_MILESTONES[i];
-            if (prevOnline < milestone && current.online >= milestone) {
-                events.push({
-                    type: 'popularity_milestone',
-                    data: current,
-                    milestone: milestone
-                });
-            }
-        }
+  if (oldState !== state) {
+    await addLog('info', '[' + roomId + '] 状态变化: ' + oldState + ' -> ' + state, env);
+    if (state === 'LIVE') {
+      events.push({ type: 'live_start', data: current });
+    } else {
+      events.push({ type: 'live_end', data: current });
     }
+  } else if (state === 'LIVE') {
+    var oldTitle = (prev.last_title || '').trim();
+    var newTitle = (current.title || '').trim();
+    if (oldTitle && oldTitle !== newTitle) {
+      events.push({ type: 'title_change', data: current, old_title: prev.last_title || '' });
+    }
+    if (normalizeCover(prev.last_cover) !== normalizeCover(current.user_cover)) {
+      events.push({ type: 'cover_change', data: current, old_cover: prev.last_cover });
+    }
+    if (String(prev.last_area || '') !== String(current.area_name || '') ||
+        String(prev.last_parent_area || '') !== String(current.parent_area_name || '')) {
+      events.push({ type: 'area_change', data: current, old_area: prev.last_area || '', old_parent_area: prev.last_parent_area || '' });
+    }
+    var prevOnline = prev.last_online || 0;
+    for (var i = 0; i < CONFIG.POPULARITY_MILESTONES.length; i++) {
+      var milestone = CONFIG.POPULARITY_MILESTONES[i];
+      if (prevOnline < milestone && current.online >= milestone) {
+        events.push({ type: 'popularity_milestone', data: current, milestone: milestone });
+      }
+    }
+  }
 
+  // 检测是否变化，避免无意义写入
+  var changed = (prev.state !== state) ||
+                (prev.last_title !== (current.title || '')) ||
+                (normalizeCover(prev.last_cover) !== normalizeCover(current.user_cover)) ||
+                (prev.last_area !== (current.area_name || '')) ||
+                (prev.last_parent_area !== (current.parent_area_name || '')) ||
+                (prev.last_online !== Number(current.online || 0));
+  if (changed) {
     var newState = {
-        room_id: roomId,
-        state: state,
-        last_live_time: current.live_time || prev.last_live_time || '',
-        last_title: current.title || '',
-        last_cover: current.user_cover || '',
-        last_area: current.area_name || '',
-        last_parent_area: current.parent_area_name || '',
-        last_online: Number(current.online || 0),
-        last_events: events.map(function(e) {
-            return e.type;
-        }),
-        last_update: new Date().toISOString(),
-        last_check: Date.now(),
-        version: 3
+      room_id: roomId,
+      state: state,
+      last_live_time: current.live_time || prev.last_live_time || '',
+      last_title: current.title || '',
+      last_cover: current.user_cover || '',
+      last_area: current.area_name || '',
+      last_parent_area: current.parent_area_name || '',
+      last_online: Number(current.online || 0),
+      last_events: events.map(function(e) { return e.type; }),
+      last_update: new Date().toISOString(),
+      last_check: Date.now(),
+      version: 3
     };
     await setMonitorState(env, roomId, newState);
+  }
 
-    for (var j = 0; j < events.length; j++) {
-        var evt = events[j];
-        var text = await buildNotification(roomId, evt.data, env, evt.type, evt);
-        var success = await sendNotification(text, env, {
-            event: evt.type,
-            room_id: roomId,
-            ...evt.data
-        });
-        if (success) {
-            await addLog('info', `[${roomId}] 事件 ${evt.type} 已通知`);
-        } else {
-            await addLog('error', `[${roomId}] 事件 ${evt.type} 发送失败`);
-        }
+  for (var j = 0; j < events.length; j++) {
+    var evt = events[j];
+    var text = await buildNotification(roomId, evt.data, env, evt.type, evt);
+    var success = await sendNotification(text, env, { event: evt.type, room_id: roomId, ...evt.data });
+    if (success) {
+      await addLog('info', '[' + roomId + '] 事件 ' + evt.type + ' 已通知', env);
+    } else {
+      await addLog('error', '[' + roomId + '] 事件 ' + evt.type + ' 发送失败', env);
     }
-    return {
-        state: state,
-        events: events
-    };
+  }
+  return { state: state, events: events };
 }
 
 async function monitorAll(env, options) {
-    options = options || {};
-    var force = options.force || false;
-    var roomIds = await getRoomList(env);
-    if (roomIds.length === 0) {
-        await addLog('warn', '房间列表为空，跳过检查');
-        return {
-            error: '房间列表为空'
-        };
+  options = options || {};
+  var force = options.force || false;
+  var roomIds = await getRoomList(env);
+  if (roomIds.length === 0) {
+    await addLog('warn', '房间列表为空，跳过检查', env);
+    return { error: '房间列表为空' };
+  }
+  await addLog('info', '开始批量检查 ' + roomIds.length + ' 个房间' + (force ? ' (强制刷新)' : ''), env);
+  var results = [];
+  for (var i = 0; i < roomIds.length; i++) {
+    var roomId = toRoomId(roomIds[i]);
+    try {
+      var res = await processRoom(roomId, env, { force: force });
+      results.push({ room_id: roomId, ...res });
+    } catch (e) {
+      await addLog('error', '处理房间 ' + roomId + ' 失败: ' + e.message, env);
+      results.push({ room_id: roomId, error: e.message });
     }
-    await addLog('info', '开始批量检查 ' + roomIds.length + ' 个房间' + (force ? ' (强制刷新)' : ''));
-    var results = [];
-    for (var i = 0; i < roomIds.length; i++) {
-        var roomId = toRoomId(roomIds[i]);
-        try {
-            var res = await processRoom(roomId, env, {
-                force: force
-            });
-            results.push({
-                room_id: roomId,
-                ...res
-            });
-        } catch (e) {
-            await addLog('error', '处理房间 ' + roomId + ' 失败: ' + e.message);
-            results.push({
-                room_id: roomId,
-                error: e.message
-            });
-        }
-    }
-    await addLog('info', '批量检查完成，共 ' + results.length + ' 个结果');
-    return results;
+  }
+  await addLog('info', '批量检查完成，共 ' + results.length + ' 个结果', env);
+  return results;
 }
 
 function isAuthenticated(request, env) {
-    var cookie = request.headers.get('Cookie') || '';
-    var authCookie = cookie.split(';').find(function(c) {
-        return c.trim().startsWith('auth=');
-    });
-    if (!authCookie) return false;
-    var authValue = authCookie.split('=')[1];
-    try {
-        var decoded = atob(authValue);
-        var parts = decoded.split(':');
-        return parts[0] === env.ADMIN_USER && parts[1] === env.ADMIN_PASSWORD;
-    } catch (e) {
-        return false;
-    }
+  var cookie = request.headers.get('Cookie') || '';
+  var authCookie = cookie.split(';').find(function(c) { return c.trim().startsWith('auth='); });
+  if (!authCookie) return false;
+  var authValue = authCookie.split('=')[1];
+  try {
+    var decoded = atob(authValue);
+    var parts = decoded.split(':');
+    return parts[0] === env.ADMIN_USER && parts[1] === env.ADMIN_PASSWORD;
+  } catch (e) {
+    return false;
+  }
 }
 
 var HTML_TEMPLATE = `
@@ -668,6 +607,7 @@ body { background: var(--bg); color: var(--text); transition: 0.3s; }
                 <option value="custom_webhook">自定义 Webhook</option>
               </select>
             </div>
+            <input type="hidden" id="apiUrl" name="api_url">
             <div class="col-md-6" id="tgTokenGroup">
               <label class="form-label">Bot Token</label>
               <input type="text" id="tgToken" name="tg_token" class="form-control" placeholder="123456789:xxxxx">
@@ -844,28 +784,37 @@ document.addEventListener('DOMContentLoaded', function() {
       tgTokenGroup.style.display = 'block';
       receiverLabel.textContent = '接收者 ID (chat_id)';
       chatId.placeholder = '例如：123456789';
-      template.placeholder = DEFAULT_TEMPLATES.telegram;
+      if (!template.value.trim()) {
+        template.value = DEFAULT_TEMPLATES.telegram;
+      }
     } else {
       tgTokenGroup.style.display = 'none';
       if (val === 'onebot_private') {
         receiverLabel.textContent = '用户 ID (user_id)';
         chatId.placeholder = '例如：123456789';
-        template.placeholder = DEFAULT_TEMPLATES.onebot_private;
+        if (!template.value.trim()) {
+          template.value = DEFAULT_TEMPLATES.onebot_private;
+        }
       } else if (val === 'onebot_group') {
         receiverLabel.textContent = '群 ID (group_id)';
         chatId.placeholder = '例如：123456789';
-        template.placeholder = DEFAULT_TEMPLATES.onebot_group;
+        if (!template.value.trim()) {
+          template.value = DEFAULT_TEMPLATES.onebot_group;
+        }
       } else if (val === 'discord') {
         receiverLabel.textContent = '无 (使用 Webhook URL)';
         chatId.placeholder = '可不填';
-        template.placeholder = DEFAULT_TEMPLATES.discord;
+        if (!template.value.trim()) {
+          template.value = DEFAULT_TEMPLATES.discord;
+        }
       } else if (val === 'custom_webhook') {
         receiverLabel.textContent = '无 (使用 Webhook URL)';
         chatId.placeholder = '可不填';
-        template.placeholder = DEFAULT_TEMPLATES.custom_webhook;
+        if (!template.value.trim()) {
+          template.value = DEFAULT_TEMPLATES.custom_webhook;
+        }
       }
     }
-    template.value = '';
   }
   document.getElementById('protocolSelect').addEventListener('change', updateNotifyForm);
   updateNotifyForm();
@@ -1040,424 +989,278 @@ document.addEventListener('DOMContentLoaded', function() {
 `;
 
 function renderLoginPage(error) {
-    error = error || '';
-    return '<!DOCTYPE html>\n<html><head><meta charset="UTF-8"><title>管理登录</title><link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.8/css/bootstrap.min.css" rel="stylesheet"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>\n<body class="d-flex align-items-center justify-content-center vh-100 bg-light"><div class="card shadow" style="width:100%;max-width:400px;"><div class="card-body"><h1 class="card-title text-center">管理登录</h1>' + (error ? '<div class="alert alert-danger">' + error + '</div>' : '') + '<form method="POST" action="/login"><div class="mb-3"><label class="form-label">用户名</label><input type="text" name="username" class="form-control" required></div><div class="mb-3"><label class="form-label">密码</label><input type="password" name="password" class="form-control" required></div><button type="submit" class="btn btn-primary w-100">登录</button></form></div></div></body></html>';
+  error = error || '';
+  return '<!DOCTYPE html>\n<html><head><meta charset="UTF-8"><title>管理登录</title><link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.8/css/bootstrap.min.css" rel="stylesheet"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>\n<body class="d-flex align-items-center justify-content-center vh-100 bg-light"><div class="card shadow" style="width:100%;max-width:400px;"><div class="card-body"><h1 class="card-title text-center">管理登录</h1>' + (error ? '<div class="alert alert-danger">' + error + '</div>' : '') + '<form method="POST" action="/login"><div class="mb-3"><label class="form-label">用户名</label><input type="text" name="username" class="form-control" required></div><div class="mb-3"><label class="form-label">密码</label><input type="password" name="password" class="form-control" required></div><button type="submit" class="btn btn-primary w-100">登录</button></form></div></div></body></html>';
 }
 
 async function renderAdminPage(env, message) {
-    var roomIds = await getRoomList(env);
-    var configs = await getNotifyConfigs(env);
-    var roomsHtml = '';
-    for (var i = 0; i < roomIds.length; i++) {
-        var roomId = toRoomId(roomIds[i]);
-        var state = await getMonitorState(env, roomId);
-        var isLive = state.state === 'LIVE';
-        var dotClass = isLive ? 'live' : 'offline';
-        var title = state.last_title || '未知';
-        var online = state.last_online || 0;
-        var area = state.last_parent_area ? state.last_parent_area + ' - ' + state.last_area : '未知分区';
-        var updateTime = state.last_update ? new Date(state.last_update).toLocaleString() : '从未更新';
-        roomsHtml += '<div class="col"><div class="card room-card h-100"><div class="card-body d-flex align-items-start"><span class="status-dot ' + dotClass + '"></span><div class="flex-grow-1 ms-2"><div class="room-title">' + title + '</div><div class="room-meta">房间 ' + roomId + ' · 人气 ' + online + ' · ' + area + '</div><div class="room-meta small">更新于 ' + updateTime + '</div></div><button class="delete-room-btn btn btn-outline-danger btn-sm" data-room="' + roomId + '">删除</button></div></div></div>';
-    }
-    if (!roomsHtml) roomsHtml = '<div class="col-12 text-center text-muted py-4">暂无房间，请添加</div>';
+  var roomIds = await getRoomList(env);
+  var configs = await getNotifyConfigs(env);
+  var roomsHtml = '';
+  for (var i = 0; i < roomIds.length; i++) {
+    var roomId = toRoomId(roomIds[i]);
+    var state = await getMonitorState(env, roomId);
+    var isLive = state.state === 'LIVE';
+    var dotClass = isLive ? 'live' : 'offline';
+    var title = state.last_title || '未知';
+    var online = state.last_online || 0;
+    var area = state.last_parent_area ? state.last_parent_area + ' - ' + state.last_area : '未知分区';
+    var updateTime = state.last_update ? new Date(state.last_update).toLocaleString() : '从未更新';
+    roomsHtml += '<div class="col"><div class="card room-card h-100"><div class="card-body d-flex align-items-start"><span class="status-dot ' + dotClass + '"></span><div class="flex-grow-1 ms-2"><div class="room-title">' + title + '</div><div class="room-meta">房间 ' + roomId + ' · 人气 ' + online + ' · ' + area + '</div><div class="room-meta small">更新于 ' + updateTime + '</div></div><button class="delete-room-btn btn btn-outline-danger btn-sm" data-room="' + roomId + '">删除</button></div></div></div>';
+  }
+  if (!roomsHtml) roomsHtml = '<div class="col-12 text-center text-muted py-4">暂无房间，请添加</div>';
 
-    var configsHtml = '';
-    for (var j = 0; j < configs.length; j++) {
-        var cfg = configs[j];
-        var protocolLabel = {
-            telegram: 'Telegram',
-            onebot_private: 'OneBot私聊',
-            onebot_group: 'OneBot群聊',
-            discord: 'Discord',
-            custom_webhook: '自定义Webhook'
-        } [cfg.protocol] || cfg.protocol;
-        var status = cfg.enabled !== false ? '启用' : '禁用';
-        var statusColor = cfg.enabled !== false ? 'success' : 'secondary';
-        configsHtml += '<tr><td>' + cfg.name + '</td><td>' + protocolLabel + '</td><td><span class="badge bg-' + statusColor + '">' + status + '</span></td><td><button class="test-btn btn btn-sm btn-outline-primary" data-id="' + cfg.id + '">测试</button><button class="toggle-btn btn btn-sm btn-outline-warning" data-id="' + cfg.id + '">' + (cfg.enabled !== false ? '禁用' : '启用') + '</button><form method="POST" action="/delete-notify" style="display:inline"><input type="hidden" name="config_id" value="' + cfg.id + '"><button type="submit" class="btn btn-sm btn-outline-danger">删除</button></form></td></tr>';
-    }
-    if (!configsHtml) configsHtml = '<tr><td colspan="4" class="text-center text-muted">暂无配置</td></tr>';
+  var configsHtml = '';
+  for (var j = 0; j < configs.length; j++) {
+    var cfg = configs[j];
+    var protocolLabel = { telegram: 'Telegram', onebot_private: 'OneBot私聊', onebot_group: 'OneBot群聊', discord: 'Discord', custom_webhook: '自定义Webhook' }[cfg.protocol] || cfg.protocol;
+    var status = cfg.enabled !== false ? '启用' : '禁用';
+    var statusColor = cfg.enabled !== false ? 'success' : 'secondary';
+    configsHtml += '<tr><td>' + cfg.name + '</td><td>' + protocolLabel + '</td><td><span class="badge bg-' + statusColor + '">' + status + '</span></td><td><button class="test-btn btn btn-sm btn-outline-primary" data-id="' + cfg.id + '">测试</button><button class="toggle-btn btn btn-sm btn-outline-warning" data-id="' + cfg.id + '">' + (cfg.enabled !== false ? '禁用' : '启用') + '</button><form method="POST" action="/delete-notify" style="display:inline"><input type="hidden" name="config_id" value="' + cfg.id + '"><button type="submit" class="btn btn-sm btn-outline-danger">删除</button></form></td></tr>';
+  }
+  if (!configsHtml) configsHtml = '<tr><td colspan="4" class="text-center text-muted">暂无配置</td></tr>';
 
-    var logsPlaceholder = '<div class="text-secondary">加载日志中...</div>';
-    var html = HTML_TEMPLATE.replace('{{ROOMS}}', roomsHtml).replace('{{CONFIGS}}', configsHtml).replace('{{LOGS}}', logsPlaceholder);
-    if (message) {
-        var msgHtml = '<div class="alert alert-success alert-dismissible fade show" role="alert">' + message + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
-        html = html.replace('<div id="messageArea"></div>', '<div id="messageArea">' + msgHtml + '</div>');
-    }
-    return html;
+  var logs = await getLogs(env);
+  var logsHtml = '';
+  if (logs.length === 0) {
+    logsHtml = '<div class="text-secondary">暂无日志</div>';
+  } else {
+    logs.forEach(function(entry) {
+      var levelColor = { info: 'log-level-info', warn: 'log-level-warn', error: 'log-level-error' }[entry.level] || '';
+      logsHtml += '<div class="log-entry"><span class="log-time">' + escapeHtml(entry.time) + '</span><span class="' + levelColor + '">[' + escapeHtml(entry.level.toUpperCase()) + ']</span> ' + escapeHtml(entry.message) + '</div>';
+    });
+  }
+  // 替换日志占位
+  var html = HTML_TEMPLATE.replace('{{ROOMS}}', roomsHtml).replace('{{CONFIGS}}', configsHtml).replace('{{LOGS}}', logsHtml);
+  if (message) {
+    var msgHtml = '<div class="alert alert-success alert-dismissible fade show" role="alert">' + message + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+    html = html.replace('<div id="messageArea"></div>', '<div id="messageArea">' + msgHtml + '</div>');
+  }
+  return html;
+}
+
+// 辅助 escapeHtml 用于渲染
+function escapeHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 export default {
-    async fetch(request, env) {
-        var url = new URL(request.url);
-        var path = url.pathname;
-        var method = request.method;
+  async fetch(request, env) {
+    var url = new URL(request.url);
+    var path = url.pathname;
+    var method = request.method;
 
-        if (path === '/logs') {
-            if (!isAuthenticated(request, env)) {
-                return new Response(JSON.stringify([]), {
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
-            }
-            var logs = await getLogs();
-            return new Response(JSON.stringify(logs), {
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-        }
-
-        var needAuth = ['/clear-logs', '/send-live-notify', '/add-notify', '/delete-notify', '/toggle-notify', '/test-notify', '/admin', '/add-room', '/remove-room', '/check', '/monitor'];
-        if (needAuth.includes(path) || path === '/') {
-            if (!isAuthenticated(request, env)) {
-                return new Response(renderLoginPage(), {
-                    headers: {
-                        'Content-Type': 'text/html'
-                    },
-                    status: 401
-                });
-            }
-        }
-
-        if (path === '/clear-logs') {
-            await clearLogs();
-            return new Response(JSON.stringify({
-                success: true
-            }));
-        }
-        if (path === '/send-live-notify') {
-            var roomIds = await getRoomList(env);
-            if (!roomIds.length) return new Response(JSON.stringify({
-                success: false,
-                message: '房间列表为空'
-            }), {
-                status: 400
-            });
-            var roomId = toRoomId(roomIds[Math.floor(Math.random() * roomIds.length)]);
-            try {
-                var current = await fetchLiveStatus(roomId);
-                var liveStatus = Number(current.live_status ?? current.livestatus ?? current.liveStatus ?? 0);
-                current.live_status = liveStatus;
-                var isLive = CONFIG.IS_LIVE_STATUS.includes(liveStatus);
-                if (!isLive) {
-                    var last = await getMonitorState(env, roomId);
-                    current.title = last.last_title || current.title || '未知';
-                    current.online = last.last_online || 0;
-                    current.area_name = last.last_area || current.area_name || '未知分区';
-                    current.parent_area_name = last.last_parent_area || current.parent_area_name || '未知父分区';
-                    current.live_time = last.last_live_time || '';
-                    current.uid = current.uid || 0;
-                }
-                var eventType = isLive ? 'live_start' : 'live_end';
-                var text = await buildNotification(roomId, current, env, eventType);
-                var success = await sendNotification(text, env, {
-                    event: eventType,
-                    room_id: roomId,
-                    ...current
-                });
-                if (success) {
-                    await addLog('info', '手动发送模拟通知 ' + roomId + (isLive ? ' (直播)' : ' (历史)'));
-                    return new Response(JSON.stringify({
-                        success: true,
-                        message: '已发送 ' + (isLive ? '开播' : '下播') + ' 通知 (房间 ' + roomId + ')'
-                    }));
-                } else {
-                    return new Response(JSON.stringify({
-                        success: false,
-                        message: '通知发送失败，请检查配置'
-                    }), {
-                        status: 500
-                    });
-                }
-            } catch (e) {
-                return new Response(JSON.stringify({
-                    success: false,
-                    message: e.message
-                }), {
-                    status: 500
-                });
-            }
-        }
-        if (path === '/add-notify' && method === 'POST') {
-            var form = await request.formData();
-            var name = form.get('name');
-            var protocol = form.get('protocol') || 'telegram';
-            var api_url = form.get('api_url');
-            var chat_id = form.get('chat_id') || '';
-            var template = form.get('template') || '';
-            if (!name || !chat_id) return new Response('缺少必要字段', {
-                status: 400
-            });
-            if (protocol === 'telegram') {
-                var tgToken = form.get('tg_token') || '';
-                if (!tgToken) {
-                    if (api_url && api_url.includes('bot') && api_url.includes('/sendMessage')) {} else {
-                        return new Response('请输入 Bot Token', {
-                            status: 400
-                        });
-                    }
-                } else {
-                    api_url = 'https://api.telegram.org/bot' + tgToken + '/sendMessage';
-                }
-            }
-            if (protocol !== 'telegram' && !api_url) {
-                return new Response('缺少 API 地址', {
-                    status: 400
-                });
-            }
-            var receiver_key = 'chat_id',
-                message_key = 'text';
-            if (protocol === 'onebot_private') {
-                receiver_key = 'user_id';
-                message_key = 'message';
-            } else if (protocol === 'onebot_group') {
-                receiver_key = 'group_id';
-                message_key = 'message';
-            } else if (protocol === 'discord' || protocol === 'custom_webhook') {
-                receiver_key = '';
-                message_key = '';
-            }
-            await addNotifyConfig(env, {
-                name: name,
-                protocol: protocol,
-                api_url: api_url,
-                chat_id: chat_id,
-                receiver_key: receiver_key,
-                message_key: message_key,
-                template: template,
-                extra_params: {}
-            });
-            await addLog('info', '添加通知配置 ' + name);
-            return new Response(await renderAdminPage(env, '配置 "' + name + '" 已添加'), {
-                headers: {
-                    'Content-Type': 'text/html'
-                }
-            });
-        }
-        if (path === '/delete-notify' && method === 'POST') {
-            var form = await request.formData();
-            var id = form.get('config_id');
-            if (!id) return new Response('缺少ID', {
-                status: 400
-            });
-            await deleteNotifyConfig(env, id);
-            await addLog('info', '删除通知配置 ' + id);
-            return new Response(await renderAdminPage(env, '配置已删除'), {
-                headers: {
-                    'Content-Type': 'text/html'
-                }
-            });
-        }
-        if (path === '/toggle-notify' && method === 'POST') {
-            var form = await request.formData();
-            var id = form.get('config_id');
-            if (!id) return new Response('缺少ID', {
-                status: 400
-            });
-            await toggleNotifyConfig(env, id);
-            await addLog('info', '切换通知配置状态 ' + id);
-            return new Response(JSON.stringify({
-                success: true,
-                message: '切换成功'
-            }));
-        }
-        if (path === '/test-notify' && method === 'POST') {
-            var form = await request.formData();
-            var id = form.get('config_id');
-            if (!id) return new Response('缺少ID', {
-                status: 400
-            });
-            var configs = await getNotifyConfigs(env);
-            var config = null;
-            for (var k = 0; k < configs.length; k++) {
-                if (configs[k].id === id) {
-                    config = configs[k];
-                    break;
-                }
-            }
-            if (!config) return new Response('配置不存在', {
-                status: 404
-            });
-
-            var roomIds = await getRoomList(env);
-            if (!roomIds.length) return new Response(JSON.stringify({
-                success: false,
-                message: '房间列表为空'
-            }), {
-                status: 400
-            });
-
-            var roomId = toRoomId(roomIds[Math.floor(Math.random() * roomIds.length)]);
-            try {
-                var current = await fetchLiveStatus(roomId);
-                var liveStatus = Number(current.live_status ?? current.livestatus ?? current.liveStatus ?? 0);
-                current.live_status = liveStatus;
-                var isLive = CONFIG.IS_LIVE_STATUS.includes(liveStatus);
-                if (!isLive) {
-                    var last = await getMonitorState(env, roomId);
-                    current.title = last.last_title || current.title || '模拟标题';
-                    current.online = last.last_online || 0;
-                    current.area_name = last.last_area || current.area_name || '未知分区';
-                    current.parent_area_name = last.last_parent_area || current.parent_area_name || '未知父分区';
-                    current.live_time = last.last_live_time || '';
-                    current.uid = current.uid || 0;
-                }
-                var eventType = isLive ? 'live_start' : 'live_end';
-                var text = await buildNotification(roomId, current, env, eventType);
-                if (!isLive) text = '[测试] ' + text;
-                var result = await sendNotificationToConfig(config, text, {
-                    event: eventType,
-                    room_id: roomId,
-                    ...current
-                });
-                if (result.success) {
-                    await addLog('info', '测试通知成功 ' + config.name + ' 房间 ' + roomId);
-                    return new Response(JSON.stringify({
-                        success: true,
-                        message: '测试通知发送成功 (' + config.name + ')'
-                    }));
-                } else {
-                    return new Response(JSON.stringify({
-                        success: false,
-                        message: '发送失败: ' + result.error
-                    }), {
-                        status: 500
-                    });
-                }
-            } catch (e) {
-                return new Response(JSON.stringify({
-                    success: false,
-                    message: e.message
-                }), {
-                    status: 500
-                });
-            }
-        }
-        if (path === '/add-room' && method === 'POST') {
-            var form = await request.formData();
-            var roomId = toRoomId(form.get('room_id') || '');
-            if (!roomId) {
-                return new Response('缺少房间号', {
-                    status: 400
-                });
-            }
-            await addRoom(env, roomId);
-            await addLog('info', '添加房间 ' + roomId);
-            try {
-                await processRoom(roomId, env, {
-                    force: true
-                });
-                await addLog('info', '添加后同步完成 ' + roomId);
-            } catch (e) {
-                await addLog('error', '添加后同步失败 ' + e.message);
-            }
-            return new Response(await renderAdminPage(env, '房间 ' + roomId + ' 已添加'), {
-                headers: {
-                    'Content-Type': 'text/html'
-                }
-            });
-        }
-        if (path === '/remove-room' && method === 'POST') {
-            var form = await request.formData();
-            var roomId = toRoomId(form.get('room_id') || '');
-            if (!roomId) {
-                return new Response('缺少房间号', {
-                    status: 400
-                });
-            }
-            await removeRoom(env, roomId);
-            await addLog('info', '删除房间 ' + roomId);
-            return new Response(await renderAdminPage(env, '房间 ' + roomId + ' 已删除'), {
-                headers: {
-                    'Content-Type': 'text/html'
-                }
-            });
-        }
-        if (path === '/monitor') {
-            var force = url.searchParams.get('force') === '1';
-            await addLog('info', force ? '手动强制刷新' : '自动检查');
-            var result = await monitorAll(env, {
-                force: force
-            });
-            return new Response(JSON.stringify(result, null, 2), {
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-        }
-        if (path === '/check') {
-            var roomId = url.searchParams.get('room_id');
-            if (!roomId) return new Response(JSON.stringify({
-                error: '缺少 room_id'
-            }), {
-                status: 400
-            });
-            try {
-                var data = await fetchLiveStatus(roomId);
-                return new Response(JSON.stringify(data, null, 2), {
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
-            } catch (e) {
-                return new Response(JSON.stringify({
-                    error: e.message
-                }), {
-                    status: 500
-                });
-            }
-        }
-        if (path === '/admin' || path === '/') {
-            var html = await renderAdminPage(env);
-            return new Response(html, {
-                headers: {
-                    'Content-Type': 'text/html'
-                }
-            });
-        }
-        if (path === '/login' && method === 'POST') {
-            var form = await request.formData();
-            var username = form.get('username');
-            var password = form.get('password');
-            if (username === env.ADMIN_USER && password === env.ADMIN_PASSWORD) {
-                var auth = btoa(username + ':' + password);
-                return new Response(null, {
-                    status: 302,
-                    headers: {
-                        'Location': '/admin',
-                        'Set-Cookie': 'auth=' + auth + '; HttpOnly; Path=/; Max-Age=86400'
-                    }
-                });
-            } else {
-                return new Response(renderLoginPage('用户名或密码错误'), {
-                    headers: {
-                        'Content-Type': 'text/html'
-                    },
-                    status: 401
-                });
-            }
-        }
-        if (path === '/logout') {
-            return new Response(null, {
-                status: 302,
-                headers: {
-                    'Location': '/login',
-                    'Set-Cookie': 'auth=; HttpOnly; Path=/; Max-Age=0'
-                }
-            });
-        }
-        return new Response('Not Found', {
-            status: 404
-        });
-    },
-    async scheduled(event, env) {
-        await addLog('info', 'Cron检测启动');
-        try {
-            var result = await monitorAll(env);
-            await addLog('info', 'Cron检测完成: ' + JSON.stringify(result));
-        } catch (e) {
-            await addLog('error', 'Cron检测异常: ' + e.message);
-        }
+    if (path === '/logs') {
+      if (!isAuthenticated(request, env)) {
+        return new Response(JSON.stringify([]), { headers: { 'Content-Type': 'application/json' } });
+      }
+      var logs = await getLogs(env);
+      return new Response(JSON.stringify(logs), { headers: { 'Content-Type': 'application/json' } });
     }
+
+    var needAuth = ['/clear-logs', '/send-live-notify', '/add-notify', '/delete-notify', '/toggle-notify', '/test-notify', '/admin', '/add-room', '/remove-room', '/check', '/monitor'];
+    if (needAuth.includes(path) || path === '/') {
+      if (!isAuthenticated(request, env)) {
+        return new Response(renderLoginPage(), { headers: { 'Content-Type': 'text/html' }, status: 401 });
+      }
+    }
+
+    if (path === '/clear-logs') {
+      await clearLogs(env);
+      return new Response(JSON.stringify({ success: true }));
+    }
+    if (path === '/send-live-notify') {
+      var roomIds = await getRoomList(env);
+      if (!roomIds.length) return new Response(JSON.stringify({ success: false, message: '房间列表为空' }), { status: 400 });
+      var roomId = toRoomId(roomIds[Math.floor(Math.random() * roomIds.length)]);
+      try {
+        var current = await fetchLiveStatus(roomId);
+        var liveStatus = Number(current.live_status ?? current.livestatus ?? current.liveStatus ?? 0);
+        current.live_status = liveStatus;
+        var isLive = CONFIG.IS_LIVE_STATUS.includes(liveStatus);
+        if (!isLive) {
+          var last = await getMonitorState(env, roomId);
+          current.title = last.last_title || current.title || '未知';
+          current.online = last.last_online || 0;
+          current.area_name = last.last_area || current.area_name || '未知分区';
+          current.parent_area_name = last.last_parent_area || current.parent_area_name || '未知父分区';
+          current.live_time = last.last_live_time || '';
+          current.uid = current.uid || 0;
+        }
+        var eventType = isLive ? 'live_start' : 'live_end';
+        var text = await buildNotification(roomId, current, env, eventType);
+        var success = await sendNotification(text, env, { event: eventType, room_id: roomId, ...current });
+        if (success) {
+          await addLog('info', '手动发送模拟通知 ' + roomId + (isLive ? ' (直播)' : ' (历史)'), env);
+          return new Response(JSON.stringify({ success: true, message: '已发送 ' + (isLive ? '开播' : '下播') + ' 通知 (房间 ' + roomId + ')' }));
+        } else {
+          return new Response(JSON.stringify({ success: false, message: '通知发送失败，请检查配置' }), { status: 500 });
+        }
+      } catch(e) {
+        return new Response(JSON.stringify({ success: false, message: e.message }), { status: 500 });
+      }
+    }
+    if (path === '/add-notify' && method === 'POST') {
+      var form = await request.formData();
+      var name = form.get('name');
+      var protocol = form.get('protocol') || 'telegram';
+      var api_url = form.get('api_url');
+      var chat_id = form.get('chat_id') || '';
+      var template = form.get('template') || '';
+      if (!name || !chat_id) return new Response('缺少必要字段', { status: 400 });
+      if (protocol === 'telegram') {
+        var tgToken = form.get('tg_token') || '';
+        if (!tgToken) {
+          if (api_url && api_url.includes('bot') && api_url.includes('/sendMessage')) {
+          } else {
+            return new Response('请输入 Bot Token', { status: 400 });
+          }
+        } else {
+          api_url = 'https://api.telegram.org/bot' + tgToken + '/sendMessage';
+        }
+      }
+      if (protocol !== 'telegram' && !api_url) {
+        return new Response('缺少 API 地址', { status: 400 });
+      }
+      if (!template || !template.trim()) {
+        template = CONFIG.DEFAULT_TEMPLATE;
+      }
+      var receiver_key = 'chat_id', message_key = 'text';
+      if (protocol === 'onebot_private') { receiver_key = 'user_id'; message_key = 'message'; }
+      else if (protocol === 'onebot_group') { receiver_key = 'group_id'; message_key = 'message'; }
+      else if (protocol === 'discord' || protocol === 'custom_webhook') { receiver_key = ''; message_key = ''; }
+      await addNotifyConfig(env, { name: name, protocol: protocol, api_url: api_url, chat_id: chat_id, receiver_key: receiver_key, message_key: message_key, template: template, extra_params: {} });
+      await addLog('info', '添加通知配置 ' + name, env);
+      return new Response(await renderAdminPage(env, '配置 "' + name + '" 已添加'), { headers: { 'Content-Type': 'text/html' } });
+    }
+    if (path === '/delete-notify' && method === 'POST') {
+      var form = await request.formData();
+      var id = form.get('config_id');
+      if (!id) return new Response('缺少ID', { status: 400 });
+      await deleteNotifyConfig(env, id);
+      await addLog('info', '删除通知配置 ' + id, env);
+      return new Response(await renderAdminPage(env, '配置已删除'), { headers: { 'Content-Type': 'text/html' } });
+    }
+    if (path === '/toggle-notify' && method === 'POST') {
+      var form = await request.formData();
+      var id = form.get('config_id');
+      if (!id) return new Response('缺少ID', { status: 400 });
+      await toggleNotifyConfig(env, id);
+      await addLog('info', '切换通知配置状态 ' + id, env);
+      return new Response(JSON.stringify({ success: true, message: '切换成功' }));
+    }
+    if (path === '/test-notify' && method === 'POST') {
+      var form = await request.formData();
+      var id = form.get('config_id');
+      if (!id) return new Response('缺少ID', { status: 400 });
+      var configs = await getNotifyConfigs(env);
+      var config = null;
+      for (var k = 0; k < configs.length; k++) {
+        if (configs[k].id === id) { config = configs[k]; break; }
+      }
+      if (!config) return new Response('配置不存在', { status: 404 });
+
+      var roomIds = await getRoomList(env);
+      if (!roomIds.length) return new Response(JSON.stringify({ success: false, message: '房间列表为空' }), { status: 400 });
+
+      var roomId = toRoomId(roomIds[Math.floor(Math.random() * roomIds.length)]);
+      try {
+        var current = await fetchLiveStatus(roomId);
+        var liveStatus = Number(current.live_status ?? current.livestatus ?? current.liveStatus ?? 0);
+        current.live_status = liveStatus;
+        var isLive = CONFIG.IS_LIVE_STATUS.includes(liveStatus);
+        if (!isLive) {
+          var last = await getMonitorState(env, roomId);
+          current.title = last.last_title || current.title || '模拟标题';
+          current.online = last.last_online || 0;
+          current.area_name = last.last_area || current.area_name || '未知分区';
+          current.parent_area_name = last.last_parent_area || current.parent_area_name || '未知父分区';
+          current.live_time = last.last_live_time || '';
+          current.uid = current.uid || 0;
+        }
+        var eventType = isLive ? 'live_start' : 'live_end';
+        var text = await buildNotification(roomId, current, env, eventType);
+        if (!isLive) text = '[测试] ' + text;
+        var result = await sendNotificationToConfig(config, text, { event: eventType, room_id: roomId, ...current });
+        if (result.success) {
+          await addLog('info', '测试通知成功 ' + config.name + ' 房间 ' + roomId, env);
+          return new Response(JSON.stringify({ success: true, message: '测试通知发送成功 (' + config.name + ')' }));
+        } else {
+          return new Response(JSON.stringify({ success: false, message: '发送失败: ' + result.error }), { status: 500 });
+        }
+      } catch(e) {
+        return new Response(JSON.stringify({ success: false, message: e.message }), { status: 500 });
+      }
+    }
+    if (path === '/add-room' && method === 'POST') {
+      var form = await request.formData();
+      var roomId = toRoomId(form.get('room_id') || '');
+      if (!roomId) {
+        return new Response('缺少房间号', { status: 400 });
+      }
+      await addRoom(env, roomId);
+      await addLog('info', '添加房间 ' + roomId, env);
+      try {
+        await processRoom(roomId, env, { force: true });
+        await addLog('info', '添加后同步完成 ' + roomId, env);
+      } catch(e) {
+        await addLog('error', '添加后同步失败 ' + e.message, env);
+      }
+      return new Response(await renderAdminPage(env, '房间 ' + roomId + ' 已添加'), { headers: { 'Content-Type': 'text/html' } });
+    }
+    if (path === '/remove-room' && method === 'POST') {
+      var form = await request.formData();
+      var roomId = toRoomId(form.get('room_id') || '');
+      if (!roomId) {
+        return new Response('缺少房间号', { status: 400 });
+      }
+      await removeRoom(env, roomId);
+      await addLog('info', '删除房间 ' + roomId, env);
+      return new Response(await renderAdminPage(env, '房间 ' + roomId + ' 已删除'), { headers: { 'Content-Type': 'text/html' } });
+    }
+    if (path === '/monitor') {
+      var force = url.searchParams.get('force') === '1';
+      await addLog('info', force ? '手动强制刷新' : '自动检查', env);
+      var result = await monitorAll(env, { force: force });
+      return new Response(JSON.stringify(result, null, 2), { headers: { 'Content-Type': 'application/json' } });
+    }
+    if (path === '/check') {
+      var roomId = url.searchParams.get('room_id');
+      if (!roomId) return new Response(JSON.stringify({ error: '缺少 room_id' }), { status: 400 });
+      try {
+        var data = await fetchLiveStatus(roomId);
+        return new Response(JSON.stringify(data, null, 2), { headers: { 'Content-Type': 'application/json' } });
+      } catch(e) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+      }
+    }
+    if (path === '/admin' || path === '/') {
+      var html = await renderAdminPage(env);
+      return new Response(html, { headers: { 'Content-Type': 'text/html' } });
+    }
+    if (path === '/login' && method === 'POST') {
+      var form = await request.formData();
+      var username = form.get('username');
+      var password = form.get('password');
+      if (username === env.ADMIN_USER && password === env.ADMIN_PASSWORD) {
+        var auth = btoa(username + ':' + password);
+        return new Response(null, { status: 302, headers: { 'Location': '/admin', 'Set-Cookie': 'auth=' + auth + '; HttpOnly; Path=/; Max-Age=86400' } });
+      } else {
+        return new Response(renderLoginPage('用户名或密码错误'), { headers: { 'Content-Type': 'text/html' }, status: 401 });
+      }
+    }
+    if (path === '/logout') {
+      return new Response(null, { status: 302, headers: { 'Location': '/login', 'Set-Cookie': 'auth=; HttpOnly; Path=/; Max-Age=0' } });
+    }
+    return new Response('Not Found', { status: 404 });
+  },
+  async scheduled(event, env) {
+    await addLog('info', 'Cron检测启动', env);
+    try {
+      var result = await monitorAll(env);
+      await addLog('info', 'Cron检测完成: ' + JSON.stringify(result), env);
+    } catch(e) {
+      await addLog('error', 'Cron检测异常: ' + e.message, env);
+    }
+  }
 };
