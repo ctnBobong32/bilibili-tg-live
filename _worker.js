@@ -543,7 +543,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
         <div class="full" id="apiUrlGroup"><label>API 地址</label><input type="url" name="api_url" id="apiUrl" placeholder="https://api.telegram.org/bot<token>/sendMessage"></div>
         <div class="full" id="tgTokenGroup" style="display:none"><label>Bot Token</label><input type="text" id="tgToken" placeholder="例如：123456:ABC-DEF..."><p style="font-size:0.75rem;color:#6b7280;margin-top:0.2rem">系统将自动构建 API 地址</p></div>
         <div><label id="receiverLabel">接收者 ID</label><input type="text" name="chat_id" id="chatId" placeholder="例如：123456789"></div>
-        <div class="full"><label>通知模板 (可选)</label><textarea name="template" id="templateArea" placeholder="[开播] {{主播}} 开播了\n标题：{{标题}}\n人气：{{人气}}\n开播时间：{{直播时间}}\n房间号：{{房间号}}\n分区：{{分区}}\n直播间链接：{{直播链接}}\n签名：{{签名}}\n粉丝：{{粉丝}}\n关注：{{关注}}\n等级：{{等级}}\n性别：{{性别}}\nVIP类型：{{VIP类型}}\nVIP状态：{{VIP状态}}\n生日：{{生日}}\n投稿数：{{投稿数}}\n文章数：{{文章数}}" rows="6"></textarea></div>
+        <div class="full"><label>通知模板 (可选)</label><textarea name="template" id="templateArea" rows="6"></textarea></div>
         <div class="full"><button type="submit" class="btn btn-primary" style="width:100%">添加配置</button></div>
       </form>
     </div>
@@ -688,6 +688,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
     fetch('/logs').then(function(res){ return res.json(); }).then(function(data){ renderLogs(data); }).catch(function(e){ console.error('获取日志失败', e); });
   }
 
+  // 主题切换
   if (themeToggle) {
     themeToggle.addEventListener('click', function() {
       var html = document.documentElement;
@@ -701,10 +702,12 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
     if (themeToggle) themeToggle.textContent = '亮色';
   }
 
+  // 退出
   if (logoutBtn && logoutForm) {
     logoutBtn.addEventListener('click', function(){ logoutForm.submit(); });
   }
 
+  // 选项卡
   document.querySelectorAll('.tab-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('tab-active'); });
@@ -719,6 +722,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
     });
   });
 
+  // 添加房间 - 打开模态框
   if (addRoomBtn && addRoomModal) {
     addRoomBtn.addEventListener('click', function() {
       addRoomModal.classList.add('active');
@@ -763,6 +767,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
     addRoomConfirmBtn.addEventListener('click', addRoomConfirm);
   }
 
+  // 按钮通用绑定
   function bindClick(id, handler) {
     var el = document.getElementById(id);
     if (el) {
@@ -843,29 +848,32 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
   var logTimer = setInterval(fetchLogs, 5000);
   fetchLogs();
 
+  // 通知配置表单切换
   function updateNotifyForm() {
     if (!protocolSelect) return;
     var val = protocolSelect.value;
+    // 默认模板（所有变量）
+    var defaultTemplate = '[开播] {{主播}} 开播了\n标题：{{标题}}\n人气：{{人气}}\n开播时间：{{直播时间}}\n房间号：{{房间号}}\n分区：{{分区}}\n直播间链接：{{直播链接}}\n签名：{{签名}}\n粉丝：{{粉丝}}\n关注：{{关注}}\n等级：{{等级}}\n性别：{{性别}}\nVIP类型：{{VIP类型}}\nVIP状态：{{VIP状态}}\n生日：{{生日}}\n投稿数：{{投稿数}}\n文章数：{{文章数}}';
     if (val === 'telegram') {
       if (apiUrlGroup) apiUrlGroup.style.display = 'none';
       if (tgTokenGroup) tgTokenGroup.style.display = 'block';
       if (apiUrl) apiUrl.placeholder = 'https://api.telegram.org/bot<token>/sendMessage';
-      if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\n标题：{{标题}}\n人气：{{人气}}\n开播时间：{{直播时间}}\n房间号：{{房间号}}\n分区：{{分区}}\n直播间链接：{{直播链接}}\n签名：{{签名}}\n粉丝：{{粉丝}}\n关注：{{关注}}\n等级：{{等级}}\n性别：{{性别}}\nVIP类型：{{VIP类型}}\nVIP状态：{{VIP状态}}\n生日：{{生日}}\n投稿数：{{投稿数}}\n文章数：{{文章数}}';
+      if (templateArea) templateArea.value = defaultTemplate;
     } else {
       if (apiUrlGroup) apiUrlGroup.style.display = 'block';
       if (tgTokenGroup) tgTokenGroup.style.display = 'none';
       if (val === 'onebot_private') {
         if (apiUrl) apiUrl.placeholder = 'http://127.0.0.1:5700/send_private_msg';
-        if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\n标题：{{标题}}\n人气：{{人气}}\n开播时间：{{直播时间}}\n房间号：{{房间号}}\n分区：{{分区}}\n直播间链接：{{直播链接}}\n签名：{{签名}}\n粉丝：{{粉丝}}\n关注：{{关注}}\n等级：{{等级}}\n性别：{{性别}}\nVIP类型：{{VIP类型}}\nVIP状态：{{VIP状态}}\n生日：{{生日}}\n投稿数：{{投稿数}}\n文章数：{{文章数}}';
+        if (templateArea) templateArea.value = defaultTemplate;
       } else if (val === 'onebot_group') {
         if (apiUrl) apiUrl.placeholder = 'http://127.0.0.1:5700/send_group_msg';
-        if (templateArea) templateArea.placeholder = '[开播] {{主播}} 开播了\n标题：{{标题}}\n人气：{{人气}}\n开播时间：{{直播时间}}\n房间号：{{房间号}}\n分区：{{分区}}\n直播间链接：{{直播链接}}\n签名：{{签名}}\n粉丝：{{粉丝}}\n关注：{{关注}}\n等级：{{等级}}\n性别：{{性别}}\nVIP类型：{{VIP类型}}\nVIP状态：{{VIP状态}}\n生日：{{生日}}\n投稿数：{{投稿数}}\n文章数：{{文章数}}';
+        if (templateArea) templateArea.value = defaultTemplate;
       } else if (val === 'discord') {
         if (apiUrl) apiUrl.placeholder = 'https://discord.com/api/webhooks/...';
-        if (templateArea) templateArea.placeholder = '**[开播] {{主播}}**\n标题：{{标题}}\n人气：{{人气}}\n开播时间：{{直播时间}}\n房间号：{{房间号}}\n分区：{{分区}}\n[直播间链接]({{直播链接}})\n签名：{{签名}}\n粉丝：{{粉丝}}\n关注：{{关注}}\n等级：{{等级}}\n性别：{{性别}}\nVIP类型：{{VIP类型}}\nVIP状态：{{VIP状态}}\n生日：{{生日}}\n投稿数：{{投稿数}}\n文章数：{{文章数}}';
+        if (templateArea) templateArea.value = '**[开播] {{主播}}**\n标题：{{标题}}\n人气：{{人气}}\n开播时间：{{直播时间}}\n房间号：{{房间号}}\n分区：{{分区}}\n[直播间链接]({{直播链接}})\n签名：{{签名}}\n粉丝：{{粉丝}}\n关注：{{关注}}\n等级：{{等级}}\n性别：{{性别}}\nVIP类型：{{VIP类型}}\nVIP状态：{{VIP状态}}\n生日：{{生日}}\n投稿数：{{投稿数}}\n文章数：{{文章数}}';
       } else if (val === 'custom_webhook') {
         if (apiUrl) apiUrl.placeholder = 'https://your-server.com/webhook';
-        if (templateArea) templateArea.placeholder = '{"event":"live_start","anchor":"{{主播}}","title":"{{标题}}","online":{{人气}},"room_id":"{{房间号}}","link":"{{直播链接}}","sign":"{{签名}}","fans":{{粉丝}},"follow":{{关注}},"level":{{等级}},"sex":"{{性别}}","vip_type":"{{VIP类型}}","vip_status":"{{VIP状态}}","birthday":"{{生日}}","archive_count":{{投稿数}},"article_count":{{文章数}}}';
+        if (templateArea) templateArea.value = '{"event":"live_start","anchor":"{{主播}}","title":"{{标题}}","online":{{人气}},"room_id":"{{房间号}}","link":"{{直播链接}}","sign":"{{签名}}","fans":{{粉丝}},"follow":{{关注}},"level":{{等级}},"sex":"{{性别}}","vip_type":"{{VIP类型}}","vip_status":"{{VIP状态}}","birthday":"{{生日}}","archive_count":{{投稿数}},"article_count":{{文章数}}}';
       }
     }
     var receiverLabel = getEl('receiverLabel');
@@ -889,9 +897,11 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
 
   if (protocolSelect) {
     protocolSelect.addEventListener('change', updateNotifyForm);
+    // 页面加载立即执行一次填充
     updateNotifyForm();
   }
 
+  // 提交表单时构建API地址（Telegram）
   var addNotifyForm = getEl('addNotifyForm');
   if (addNotifyForm) {
     addNotifyForm.addEventListener('submit', function(e) {
@@ -908,6 +918,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid #2563eb;outline-offset
     });
   }
 
+  // 事件委托（处理测试/切换按钮）
   document.addEventListener('click', function(e) {
     var target = e.target.closest('button');
     if (!target) return;
