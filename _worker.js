@@ -5,7 +5,8 @@ var CONFIG = {
   CACHE_TTL: 86400,
   USER_INFO_TTL: 86400,
   MAX_LOG_ENTRIES: 500,
-  POPULARITY_MILESTONES: [1000, 5000, 10000, 50000, 100000]
+  POPULARITY_MILESTONES: [1000, 5000, 10000, 50000, 100000],
+  LIVE_CACHE_TTL: 30
 };
 
 function toRoomId(id) {
@@ -91,7 +92,8 @@ async function getMonitorState(env, roomId) {
     last_area: '',
     last_parent_area: '',
     last_online: 0,
-    last_live_time: ''
+    last_live_time: '',
+    last_check: 0
   };
 }
 
@@ -99,6 +101,7 @@ async function setMonitorState(env, roomId, state) {
   roomId = toRoomId(roomId);
   var key = 'monitor:' + roomId;
   state.last_update = new Date().toISOString();
+  state.last_check = Date.now();
   state.version = 2;
   await env.ROOM_STORE.put(key, JSON.stringify(state));
 }
@@ -332,7 +335,6 @@ async function processRoom(roomId, env, options) {
   }
   var isLive = CONFIG.IS_LIVE_STATUS.includes(current.live_status);
   var state = isLive ? 'LIVE' : 'OFFLINE';
-  // 注意：这里不再重复声明 prev
   var oldState = prev.state || 'OFFLINE';
   var events = [];
 
@@ -372,6 +374,7 @@ async function processRoom(roomId, env, options) {
     last_parent_area: current.parent_area_name || '',
     last_online: Number(current.online || 0),
     last_update: new Date().toISOString(),
+    last_check: Date.now(),
     version: 2
   };
   await setMonitorState(env, roomId, newState);
@@ -383,7 +386,7 @@ async function processRoom(roomId, env, options) {
     if (success) {
       await addLog('info', `[${roomId}] 事件 ${evt.type} 已通知`);
     } else {
-      await addLog('error', `[${roomId}] 事件 ${evt.type} 发送失败（无可用通知配置或发送错误）`);
+      await addLog('error', `[${roomId}] 事件 ${evt.type} 发送失败`);
     }
   }
   return { state: state, events: events };
@@ -427,6 +430,7 @@ function isAuthenticated(request, env) {
   }
 }
 
+// 白蓝配色 UI，日志放主页，状态点
 var HTML_TEMPLATE = `
 <!DOCTYPE html>
 <html lang="zh">
@@ -438,17 +442,46 @@ var HTML_TEMPLATE = `
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.11.0/axios.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.8/js/bootstrap.bundle.min.js"></script>
+<style>
+:root { --bg: #f0f5ff; --card-bg: #ffffff; --primary: #2b6cb5; --text: #1a365d; }
+[data-bs-theme="dark"] { --bg: #1a202c; --card-bg: #2d3748; --primary: #4a8bdb; --text: #e2e8f0; }
+body { background: var(--bg); color: var(--text); transition: 0.3s; }
+.card { background: var(--card-bg); border: none; border-radius: 16px; box-shadow: 0 4px 12px rgba(43,108,181,0.08); }
+.card-header { background: var(--primary); color: white; border-radius: 16px 16px 0 0 !important; padding: 0.75rem 1.25rem; font-weight: 600; }
+.btn-primary { background: var(--primary); border-color: var(--primary); }
+.btn-outline-primary { color: var(--primary); border-color: var(--primary); }
+.btn-outline-primary:hover { background: var(--primary); color: white; }
+.btn-outline-danger:hover { background: #dc3545; color: white; }
+.status-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 8px; flex-shrink: 0; }
+.status-dot.live { background: #20c997; box-shadow: 0 0 12px rgba(32,201,151,0.6); }
+.status-dot.offline { background: #dc3545; box-shadow: 0 0 12px rgba(220,53,69,0.4); }
+.room-card { transition: 0.2s; cursor: default; }
+.room-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(43,108,181,0.12); }
+.room-title { font-weight: 600; font-size: 1.1rem; margin-bottom: 0.25rem; }
+.room-meta { font-size: 0.9rem; color: #6c757d; }
+.log-box { max-height: 300px; overflow-y: auto; font-size: 0.85rem; background: var(--card-bg); border-radius: 0 0 16px 16px; padding: 0.5rem 1rem; }
+.log-entry { padding: 0.25rem 0; border-bottom: 1px solid rgba(0,0,0,0.05); }
+.log-time { color: #6c757d; margin-right: 0.5rem; }
+.log-level-info { color: #0d6efd; }
+.log-level-warn { color: #ffc107; }
+.log-level-error { color: #dc3545; }
+.tab-btn { border-radius: 12px 12px 0 0; font-weight: 500; }
+.tab-btn.active { background: var(--primary); color: white; }
+.tab-btn:not(.active) { background: transparent; color: var(--text); }
+.tab-btn:not(.active):hover { background: rgba(43,108,181,0.08); }
+#notifies .form-control, #notifies .form-select { background: var(--card-bg); color: var(--text); border-color: #ced4da; }
+[data-bs-theme="dark"] .form-control, [data-bs-theme="dark"] .form-select { background: #2d3748; color: #e2e8f0; border-color: #4a5568; }
+</style>
 </head>
 <body>
 <div class="container-fluid p-3">
-  <div class="row mb-3">
-    <div class="col">
-      <h1 class="d-flex align-items-center">
-        <i class="bi bi-broadcast me-2"></i>直播监控管理
-        <small class="text-muted ms-3 fs-6">状态机 + KV 持久化</small>
+  <div class="row mb-3 align-items-center">
+    <div class="col-md-6">
+      <h1 class="d-flex align-items-center gap-2" style="color:var(--primary);">
+        <i class="bi bi-broadcast"></i> 直播监控
       </h1>
     </div>
-    <div class="col-auto">
+    <div class="col-md-6 text-end">
       <button id="themeToggle" class="btn btn-outline-secondary me-2">深色</button>
       <button id="logoutBtn" class="btn btn-outline-danger">退出</button>
       <form id="logoutForm" method="POST" action="/logout" style="display:none"></form>
@@ -458,37 +491,65 @@ var HTML_TEMPLATE = `
   <div id="messageArea"></div>
 
   <ul class="nav nav-tabs mb-3" id="myTab" role="tablist">
-    <li class="nav-item" role="presentation">
-      <button class="nav-link active" id="rooms-tab" data-bs-toggle="tab" data-bs-target="#rooms" type="button" role="tab">房间</button>
+    <li class="nav-item">
+      <button class="nav-link tab-btn active" id="rooms-tab" data-bs-toggle="tab" data-bs-target="#rooms" type="button">房间</button>
     </li>
-    <li class="nav-item" role="presentation">
-      <button class="nav-link" id="notifies-tab" data-bs-toggle="tab" data-bs-target="#notifies" type="button" role="tab">通知</button>
-    </li>
-    <li class="nav-item" role="presentation">
-      <button class="nav-link" id="logs-tab" data-bs-toggle="tab" data-bs-target="#logs" type="button" role="tab">日志</button>
+    <li class="nav-item">
+      <button class="nav-link tab-btn" id="notifies-tab" data-bs-toggle="tab" data-bs-target="#notifies" type="button">通知配置</button>
     </li>
   </ul>
 
   <div class="tab-content">
-    <div class="tab-pane active" id="rooms" role="tabpanel">
-      <div class="mb-3 d-flex flex-wrap gap-2">
-        <button id="addRoomBtn" class="btn btn-primary"><i class="bi bi-plus-circle"></i> 添加房间</button>
-        <button id="checkAllBtn" class="btn btn-success"><i class="bi bi-arrow-repeat"></i> 检查全部</button>
-        <button id="refreshRoomsBtn" class="btn btn-info"><i class="bi bi-cloud-refresh"></i> 刷新状态</button>
-        <button id="sendLiveBtn" class="btn btn-warning"><i class="bi bi-broadcast"></i> 模拟开播</button>
-        <div class="input-group" style="width:auto;">
-          <input id="singleCheckInput" class="form-control" placeholder="房间号" style="width:120px;">
-          <button id="singleCheckBtn" class="btn btn-outline-secondary">单查</button>
+    <!-- 房间面板 -->
+    <div class="tab-pane active" id="rooms">
+      <div class="card">
+        <div class="card-header d-flex flex-wrap gap-2 align-items-center">
+          <i class="bi bi-house-door"></i> 监控房间
+          <div class="ms-auto d-flex flex-wrap gap-2">
+            <button id="addRoomBtn" class="btn btn-sm btn-light"><i class="bi bi-plus-circle"></i> 添加</button>
+            <button id="checkAllBtn" class="btn btn-sm btn-light"><i class="bi bi-arrow-repeat"></i> 检查</button>
+            <button id="refreshRoomsBtn" class="btn btn-sm btn-light"><i class="bi bi-cloud-refresh"></i> 刷新</button>
+            <button id="sendLiveBtn" class="btn btn-sm btn-warning"><i class="bi bi-broadcast"></i> 模拟</button>
+            <div class="input-group input-group-sm" style="width:200px;">
+              <input id="singleCheckInput" class="form-control" placeholder="房间号">
+              <button id="singleCheckBtn" class="btn btn-light">查</button>
+            </div>
+          </div>
         </div>
-        <button id="exportLogsBtn" class="btn btn-outline-secondary"><i class="bi bi-download"></i> 导出日志</button>
+        <div class="card-body">
+          <div id="roomContainer" class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">{{ROOMS}}</div>
+        </div>
       </div>
-      <div id="roomContainer" class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">{{ROOMS}}</div>
+      <!-- 日志区域 -->
+      <div class="card mt-4">
+        <div class="card-header d-flex flex-wrap gap-2 align-items-center">
+          <i class="bi bi-journal-text"></i> 运行日志
+          <div class="ms-auto d-flex gap-2 flex-wrap">
+            <button id="clearLogsBtn" class="btn btn-sm btn-light"><i class="bi bi-trash"></i> 清除</button>
+            <button id="refreshLogsBtn" class="btn btn-sm btn-light"><i class="bi bi-arrow-clockwise"></i> 刷新</button>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="autoRefresh" checked>
+              <label class="form-check-label" for="autoRefresh">自动</label>
+            </div>
+            <input id="logSearch" class="form-control form-control-sm" placeholder="搜索..." style="width:120px;">
+            <select id="logLevelFilter" class="form-select form-select-sm" style="width:auto;">
+              <option value="">全部</option>
+              <option value="info">Info</option>
+              <option value="warn">Warn</option>
+              <option value="error">Error</option>
+            </select>
+            <button id="exportLogsBtn" class="btn btn-sm btn-light"><i class="bi bi-download"></i></button>
+          </div>
+        </div>
+        <div id="logContainer" class="log-box">{{LOGS}}</div>
+      </div>
     </div>
 
-    <div class="tab-pane" id="notifies" role="tabpanel">
+    <!-- 通知配置面板 -->
+    <div class="tab-pane" id="notifies">
       <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-plus-circle"></i> 添加通知配置</div>
         <div class="card-body">
-          <h5 class="card-title"><i class="bi bi-plus-circle"></i> 添加通知配置</h5>
           <form id="addNotifyForm" class="row g-3">
             <div class="col-md-4">
               <label class="form-label">名称</label>
@@ -508,18 +569,18 @@ var HTML_TEMPLATE = `
               <label class="form-label">API 地址</label>
               <input type="url" name="api_url" id="apiUrl" class="form-control" placeholder="https://api.telegram.org/bot<token>/sendMessage">
             </div>
-            <div class="col-md-4 d-none" id="tgTokenGroup">
+            <div class="col-md-6" id="tgTokenGroup">
               <label class="form-label">Bot Token</label>
               <input type="text" id="tgToken" name="tg_token" class="form-control" placeholder="例如：123456:ABC-DEF...">
-              <small class="text-muted">系统将自动构建 API 地址</small>
+              <small class="text-muted">自动构建 API 地址</small>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-6">
               <label class="form-label" id="receiverLabel">接收者 ID</label>
               <input type="text" name="chat_id" id="chatId" class="form-control" placeholder="例如：123456789">
             </div>
             <div class="col-12">
               <label class="form-label">通知模板 (可选)</label>
-              <textarea name="template" id="templateArea" class="form-control" rows="3"></textarea>
+              <textarea name="template" id="templateArea" class="form-control" rows="3" placeholder="[开播] {{主播}} 开播了..."></textarea>
             </div>
             <div class="col-12">
               <button type="submit" class="btn btn-primary"><i class="bi bi-plus-circle"></i> 添加配置</button>
@@ -528,8 +589,8 @@ var HTML_TEMPLATE = `
         </div>
       </div>
       <div class="card">
+        <div class="card-header"><i class="bi bi-list-ul"></i> 现有配置</div>
         <div class="card-body">
-          <h5 class="card-title"><i class="bi bi-list-ul"></i> 现有配置</h5>
           <div class="table-responsive">
             <table class="table table-hover">
               <thead><tr><th>名称</th><th>协议</th><th>状态</th><th>操作</th></tr></thead>
@@ -539,35 +600,10 @@ var HTML_TEMPLATE = `
         </div>
       </div>
     </div>
-
-    <div class="tab-pane" id="logs" role="tabpanel">
-      <div class="card">
-        <div class="card-body">
-          <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h5 class="card-title mb-0"><i class="bi bi-journal-text"></i> 日志</h5>
-            <div class="d-flex gap-2 flex-wrap">
-              <button id="clearLogsBtn" class="btn btn-danger btn-sm"><i class="bi bi-trash"></i> 清除</button>
-              <button id="refreshLogsBtn" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> 刷新</button>
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="autoRefresh" checked>
-                <label class="form-check-label" for="autoRefresh">自动刷新</label>
-              </div>
-              <input id="logSearch" class="form-control form-control-sm" placeholder="搜索..." style="width:150px;">
-              <select id="logLevelFilter" class="form-select form-select-sm" style="width:auto;">
-                <option value="">全部</option>
-                <option value="info">Info</option>
-                <option value="warn">Warn</option>
-                <option value="error">Error</option>
-              </select>
-            </div>
-          </div>
-          <div id="logContainer" class="bg-dark text-light p-2 rounded" style="max-height:400px;overflow-y:auto;font-family:monospace;font-size:0.85rem;">{{LOGS}}</div>
-        </div>
-      </div>
-    </div>
   </div>
 </div>
 
+<!-- 模态框 -->
 <div class="modal fade" id="addRoomModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -608,36 +644,31 @@ document.addEventListener('DOMContentLoaded', function() {
   var addRoomModal = new bootstrap.Modal(document.getElementById('addRoomModal'));
   var customModal = new bootstrap.Modal(document.getElementById('customModal'));
 
-  // 清理 modal backdrop 残留
   function clearModalBackdrop() {
     document.querySelectorAll('.modal-backdrop').forEach(function(el) { el.remove(); });
     document.body.classList.remove('modal-open');
     document.body.style = '';
   }
 
-  // Tab 状态持久化
+  // Tab 状态保存
   function saveTab() {
-    var active = document.querySelector('.nav-link.active');
-    if (active) {
-      localStorage.setItem('activeTab', active.id);
-    }
+    var active = document.querySelector('.nav-link.tab-btn.active');
+    if (active) localStorage.setItem('activeTab', active.id);
   }
-  document.querySelectorAll('[data-bs-toggle="tab"]').forEach(function(tab) {
-    tab.addEventListener('shown.bs.tab', saveTab);
+  document.querySelectorAll('[data-bs-toggle="tab"]').forEach(function(t) {
+    t.addEventListener('shown.bs.tab', saveTab);
   });
-  var savedTab = localStorage.getItem('activeTab');
-  if (savedTab) {
-    var tabEl = document.getElementById(savedTab);
-    if (tabEl) {
-      new bootstrap.Tab(tabEl).show();
-    }
+  var saved = localStorage.getItem('activeTab');
+  if (saved) {
+    var el = document.getElementById(saved);
+    if (el) new bootstrap.Tab(el).show();
   }
 
-  // 浮动提示框
+  // 浮动提示
   function showMessage(msg, type) {
     type = type || 'info';
     var box = document.createElement('div');
-    box.className = 'position-fixed top-0 start-50 translate-middle-x mt-3 alert alert-' + (type === 'error' ? 'danger' : type === 'warn' ? 'warning' : 'success');
+    box.className = 'position-fixed top-0 start-50 translate-middle-x mt-3 alert alert-' + (type==='error'?'danger':type==='warn'?'warning':'success');
     box.style.zIndex = '99999';
     box.style.minWidth = '320px';
     box.style.textAlign = 'center';
@@ -646,17 +677,13 @@ document.addEventListener('DOMContentLoaded', function() {
     setTimeout(function() {
       box.style.transition = 'opacity .5s';
       box.style.opacity = '0';
-      setTimeout(function() { box.remove(); }, 500);
+      setTimeout(function(){ box.remove(); }, 500);
     }, 5000);
   }
 
-  // 日志渲染（转义）
+  // 日志转义
   function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
   function renderLogs(logs) {
@@ -664,25 +691,22 @@ document.addEventListener('DOMContentLoaded', function() {
     var search = document.getElementById('logSearch').value.toLowerCase();
     var level = document.getElementById('logLevelFilter').value;
     var filtered = logs;
-    if (search) filtered = filtered.filter(function(e) { return e.message.toLowerCase().includes(search); });
-    if (level) filtered = filtered.filter(function(e) { return e.level === level; });
-    if (!filtered.length) {
-      container.innerHTML = '<div class="text-secondary">暂无日志</div>';
-      return;
-    }
+    if (search) filtered = filtered.filter(function(e){ return e.message.toLowerCase().includes(search); });
+    if (level) filtered = filtered.filter(function(e){ return e.level === level; });
+    if (!filtered.length) { container.innerHTML = '<div class="text-secondary">暂无日志</div>'; return; }
     var html = '';
     filtered.forEach(function(entry) {
-      var levelColor = { info: 'text-info', warn: 'text-warning', error: 'text-danger' }[entry.level] || '';
-      html += '<div><span class="text-secondary">' + escapeHtml(entry.time) + '</span> <span class="' + levelColor + '">[' + escapeHtml(entry.level.toUpperCase()) + ']</span> ' + escapeHtml(entry.message) + '</div>';
+      var levelColor = { info: 'log-level-info', warn: 'log-level-warn', error: 'log-level-error' }[entry.level] || '';
+      html += '<div class="log-entry"><span class="log-time">' + escapeHtml(entry.time) + '</span><span class="' + levelColor + '">[' + escapeHtml(entry.level.toUpperCase()) + ']</span> ' + escapeHtml(entry.message) + '</div>';
     });
     container.innerHTML = html;
   }
 
   function fetchLogs() {
-    axios.get('/logs').then(function(res) { renderLogs(res.data); }).catch(function(e) { console.error('获取日志失败', e); });
+    axios.get('/logs').then(function(res){ renderLogs(res.data); }).catch(function(e){ console.error('获取日志失败', e); });
   }
 
-  // 主题切换
+  // 主题
   document.getElementById('themeToggle').addEventListener('click', function() {
     var html = document.documentElement;
     var theme = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
@@ -695,9 +719,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // 退出
-  document.getElementById('logoutBtn').addEventListener('click', function() {
-    document.getElementById('logoutForm').submit();
-  });
+  document.getElementById('logoutBtn').addEventListener('click', function(){ document.getElementById('logoutForm').submit(); });
 
   // 日志自动刷新
   var logTimer = null;
@@ -718,31 +740,30 @@ document.addEventListener('DOMContentLoaded', function() {
     var tgTokenGroup = document.getElementById('tgTokenGroup');
     var apiUrl = document.getElementById('apiUrl');
     var template = document.getElementById('templateArea');
-    var defaultTemplate = '[开播] {{主播}} 开播了\n标题：{{标题}}\n人气：{{人气}}\n开播时间：{{直播时间}}\n房间号：{{房间号}}\n分区：{{分区}}\n直播间链接：{{直播链接}}\n签名：{{签名}}\n粉丝：{{粉丝}}\n关注：{{关注}}\n等级：{{等级}}\n性别：{{性别}}\nVIP类型：{{VIP类型}}\nVIP状态：{{VIP状态}}\n生日：{{生日}}\n投稿数：{{投稿数}}\n文章数：{{文章数}}';
+    var receiverLabel = document.getElementById('receiverLabel');
+    var chatId = document.getElementById('chatId');
     if (val === 'telegram') {
       apiUrlGroup.classList.add('d-none');
       tgTokenGroup.classList.remove('d-none');
       apiUrl.placeholder = 'https://api.telegram.org/bot<token>/sendMessage';
-      template.value = defaultTemplate;
+      template.placeholder = '[开播] {{主播}} 开播了\n标题：{{标题}}\n人气：{{人气}}';
     } else {
       apiUrlGroup.classList.remove('d-none');
       tgTokenGroup.classList.add('d-none');
       if (val === 'onebot_private') {
         apiUrl.placeholder = 'http://127.0.0.1:5700/send_private_msg';
-        template.value = defaultTemplate;
+        template.placeholder = '[开播] {{主播}} 开播了\n标题：{{标题}}\n人气：{{人气}}';
       } else if (val === 'onebot_group') {
         apiUrl.placeholder = 'http://127.0.0.1:5700/send_group_msg';
-        template.value = defaultTemplate;
+        template.placeholder = '[开播] {{主播}} 开播了\n标题：{{标题}}\n人气：{{人气}}';
       } else if (val === 'discord') {
         apiUrl.placeholder = 'https://discord.com/api/webhooks/...';
-        template.value = '**[开播] {{主播}}**\n标题：{{标题}}\n人气：{{人气}}\n开播时间：{{直播时间}}\n房间号：{{房间号}}\n分区：{{分区}}\n[直播间链接]({{直播链接}})\n签名：{{签名}}\n粉丝：{{粉丝}}\n关注：{{关注}}\n等级：{{等级}}\n性别：{{性别}}\nVIP类型：{{VIP类型}}\nVIP状态：{{VIP状态}}\n生日：{{生日}}\n投稿数：{{投稿数}}\n文章数：{{文章数}}';
+        template.placeholder = '**[开播] {{主播}}**\n标题：{{标题}}\n人气：{{人气}}';
       } else if (val === 'custom_webhook') {
         apiUrl.placeholder = 'https://your-server.com/webhook';
-        template.value = '{"event":"live_start","anchor":"{{主播}}","title":"{{标题}}","online":{{人气}},"room_id":"{{房间号}}","link":"{{直播链接}}","sign":"{{签名}}","fans":{{粉丝}},"follow":{{关注}},"level":{{等级}},"sex":"{{性别}}","vip_type":"{{VIP类型}}","vip_status":"{{VIP状态}}","birthday":"{{生日}}","archive_count":{{投稿数}},"article_count":{{文章数}}}';
+        template.placeholder = '{"event":"live_start","anchor":"{{主播}}","title":"{{标题}}","online":{{人气}}}';
       }
     }
-    var receiverLabel = document.getElementById('receiverLabel');
-    var chatId = document.getElementById('chatId');
     if (val === 'telegram') {
       receiverLabel.textContent = '接收者 ID (chat_id)';
       chatId.placeholder = '例如：123456789';
@@ -756,11 +777,13 @@ document.addEventListener('DOMContentLoaded', function() {
       receiverLabel.textContent = '接收者 ID (可选)';
       chatId.placeholder = '可不填';
     }
+    // 清空模板内容，让用户自己填
+    template.value = '';
   }
   document.getElementById('protocolSelect').addEventListener('change', updateNotifyForm);
   updateNotifyForm();
 
-  // 添加通知
+  // 提交通知配置
   document.getElementById('addNotifyForm').addEventListener('submit', function(e) {
     e.preventDefault();
     var form = this;
@@ -772,16 +795,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     var formData = new FormData(form);
     axios.post('/add-notify', formData, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
-      .then(function() {
-        showMessage('配置添加成功', 'info');
-        setTimeout(function() { location.reload(); }, 1200);
-      })
-      .catch(function(err) {
-        showMessage('添加失败: ' + (err.response ? err.response.data : err.message), 'error');
-      });
+      .then(function(){ showMessage('配置添加成功', 'info'); setTimeout(function(){ location.reload(); }, 1200); })
+      .catch(function(err){ showMessage('添加失败: ' + (err.response ? err.response.data : err.message), 'error'); });
   });
 
-  // 事件委托：所有按钮
+  // 事件委托
   document.addEventListener('click', function(e) {
     var btn = e.target.closest('button');
     if (!btn) return;
@@ -804,7 +822,7 @@ document.addEventListener('DOMContentLoaded', function() {
           addRoomModal.hide();
           setTimeout(clearModalBackdrop, 300);
           showMessage('房间 ' + roomId + ' 已添加', 'info');
-          setTimeout(function() { location.reload(); }, 1200);
+          setTimeout(function(){ location.reload(); }, 1200);
         })
         .catch(function(err) {
           showMessage('添加失败: ' + (err.response ? err.response.data : err.message), 'error');
@@ -815,33 +833,33 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     if (btn.id === 'checkAllBtn') {
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 检查中...';
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
       axios.get('/monitor?force=1')
-        .then(function() { location.reload(); })
-        .catch(function() { location.reload(); });
+        .then(function(){ location.reload(); })
+        .catch(function(){ location.reload(); });
       return;
     }
     if (btn.id === 'refreshRoomsBtn') {
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 刷新中...';
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
       axios.get('/monitor?force=1')
-        .then(function() { location.reload(); })
-        .catch(function() { location.reload(); });
+        .then(function(){ location.reload(); })
+        .catch(function(){ location.reload(); });
       return;
     }
     if (btn.id === 'sendLiveBtn') {
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 发送中...';
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
       axios.post('/send-live-notify')
         .then(function(res) {
           showMessage(res.data.message, res.data.success ? 'info' : 'error');
           btn.disabled = false;
-          btn.innerHTML = '<i class="bi bi-broadcast"></i> 模拟开播';
+          btn.innerHTML = '<i class="bi bi-broadcast"></i> 模拟';
         })
         .catch(function(err) {
           showMessage('操作失败: ' + (err.response ? err.response.data : err.message), 'error');
           btn.disabled = false;
-          btn.innerHTML = '<i class="bi bi-broadcast"></i> 模拟开播';
+          btn.innerHTML = '<i class="bi bi-broadcast"></i> 模拟';
         });
       return;
     }
@@ -849,31 +867,17 @@ document.addEventListener('DOMContentLoaded', function() {
       var roomId = document.getElementById('singleCheckInput').value.trim();
       if (!roomId) { showMessage('请输入房间号', 'error'); return; }
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 查询中...';
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
       axios.get('/check?room_id=' + encodeURIComponent(roomId))
         .then(function(res) {
           showMessage(JSON.stringify(res.data, null, 2), 'info');
           btn.disabled = false;
-          btn.innerHTML = '<i class="bi bi-search"></i> 单查';
+          btn.innerHTML = '查';
         })
         .catch(function(err) {
           showMessage('查询失败: ' + (err.response ? err.response.data : err.message), 'error');
           btn.disabled = false;
-          btn.innerHTML = '<i class="bi bi-search"></i> 单查';
-        });
-      return;
-    }
-    if (btn.id === 'exportLogsBtn') {
-      axios.get('/logs')
-        .then(function(res) {
-          var blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
-          var url = URL.createObjectURL(blob);
-          var a = document.createElement('a');
-          a.href = url; a.download = 'logs.json'; a.click();
-          URL.revokeObjectURL(url);
-        })
-        .catch(function(err) {
-          showMessage('导出失败: ' + err.message, 'error');
+          btn.innerHTML = '查';
         });
       return;
     }
@@ -885,18 +889,25 @@ document.addEventListener('DOMContentLoaded', function() {
         customModal.hide();
         setTimeout(clearModalBackdrop, 300);
         axios.post('/clear-logs')
-          .then(function() {
-            showMessage('日志已清除', 'info');
-            fetchLogs();
-          })
-          .catch(function(err) {
-            showMessage('清除失败: ' + err.message, 'error');
-          });
+          .then(function(){ showMessage('日志已清除', 'info'); fetchLogs(); })
+          .catch(function(err){ showMessage('清除失败: ' + err.message, 'error'); });
       };
-      document.getElementById('modalCancelBtn').onclick = function() { customModal.hide(); };
+      document.getElementById('modalCancelBtn').onclick = function(){ customModal.hide(); };
       return;
     }
-    // 删除房间（动态生成的按钮）
+    if (btn.id === 'exportLogsBtn') {
+      axios.get('/logs')
+        .then(function(res) {
+          var blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url; a.download = 'logs.json'; a.click();
+          URL.revokeObjectURL(url);
+        })
+        .catch(function(err){ showMessage('导出失败: ' + err.message, 'error'); });
+      return;
+    }
+    // 删除房间
     if (btn.classList.contains('delete-room-btn')) {
       var roomId = btn.dataset.room;
       if (!confirm('确定删除房间 ' + roomId + ' 吗？')) return;
@@ -905,18 +916,11 @@ document.addEventListener('DOMContentLoaded', function() {
       var formData = new URLSearchParams();
       formData.append('room_id', roomId);
       axios.post('/remove-room', formData, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
-        .then(function() {
-          showMessage('房间 ' + roomId + ' 已删除', 'info');
-          setTimeout(function() { location.reload(); }, 1200);
-        })
-        .catch(function(err) {
-          showMessage('删除失败: ' + (err.response ? err.response.data : err.message), 'error');
-          btn.disabled = false;
-          btn.innerHTML = '删除';
-        });
+        .then(function(){ showMessage('房间 ' + roomId + ' 已删除', 'info'); setTimeout(function(){ location.reload(); }, 1200); })
+        .catch(function(err){ showMessage('删除失败: ' + (err.response ? err.response.data : err.message), 'error'); btn.disabled = false; btn.innerHTML = '删除'; });
       return;
     }
-    // 测试/切换配置
+    // 测试/切换
     if (btn.classList.contains('test-btn')) {
       var id = btn.dataset.id;
       btn.disabled = true;
@@ -924,16 +928,8 @@ document.addEventListener('DOMContentLoaded', function() {
       var formData = new URLSearchParams();
       formData.append('config_id', id);
       axios.post('/test-notify', formData, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
-        .then(function(res) {
-          showMessage(res.data.message, res.data.success ? 'info' : 'error');
-          btn.disabled = false;
-          btn.textContent = '测试';
-        })
-        .catch(function(err) {
-          showMessage('测试失败: ' + (err.response ? err.response.data : err.message), 'error');
-          btn.disabled = false;
-          btn.textContent = '测试';
-        });
+        .then(function(res){ showMessage(res.data.message, res.data.success ? 'info' : 'error'); btn.disabled = false; btn.textContent = '测试'; })
+        .catch(function(err){ showMessage('测试失败: ' + (err.response ? err.response.data : err.message), 'error'); btn.disabled = false; btn.textContent = '测试'; });
       return;
     }
     if (btn.classList.contains('toggle-btn')) {
@@ -943,31 +939,17 @@ document.addEventListener('DOMContentLoaded', function() {
       var formData = new URLSearchParams();
       formData.append('config_id', id);
       axios.post('/toggle-notify', formData, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
-        .then(function(res) {
-          showMessage(res.data.message, 'info');
-          setTimeout(function() { location.reload(); }, 500);
-        })
-        .catch(function(err) {
-          showMessage('切换失败: ' + (err.response ? err.response.data : err.message), 'error');
-          btn.disabled = false;
-          btn.textContent = '切换';
-        });
+        .then(function(res){ showMessage(res.data.message, 'info'); setTimeout(function(){ location.reload(); }, 500); })
+        .catch(function(err){ showMessage('切换失败: ' + (err.response ? err.response.data : err.message), 'error'); btn.disabled = false; btn.textContent = '切换'; });
       return;
     }
   });
 
-  // 添加房间模态框回车提交
   document.getElementById('roomInput').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
-      document.getElementById('addRoomConfirmBtn').click();
-    }
+    if (e.key === 'Enter') document.getElementById('addRoomConfirmBtn').click();
   });
 
-  // 清理所有 modal backdrop（全局）
-  document.addEventListener('hidden.bs.modal', function() {
-    setTimeout(clearModalBackdrop, 300);
-  });
-
+  document.addEventListener('hidden.bs.modal', function(){ setTimeout(clearModalBackdrop, 300); });
 });
 </script>
 </body>
@@ -987,13 +969,12 @@ async function renderAdminPage(env, message) {
     var roomId = toRoomId(roomIds[i]);
     var state = await getMonitorState(env, roomId);
     var isLive = state.state === 'LIVE';
-    var statusColor = isLive ? 'success' : 'secondary';
-    var statusText = isLive ? '直播中' : '未开播';
+    var dotClass = isLive ? 'live' : 'offline';
     var title = state.last_title || '未知';
     var online = state.last_online || 0;
     var area = state.last_parent_area ? state.last_parent_area + ' - ' + state.last_area : '未知分区';
     var updateTime = state.last_update ? new Date(state.last_update).toLocaleString() : '从未更新';
-    roomsHtml += '<div class="col"><div class="card h-100"><div class="card-body d-flex align-items-start"><div class="flex-shrink-0"><span class="badge bg-' + statusColor + ' rounded-pill me-2">' + statusText + '</span></div><div class="flex-grow-1"><h6 class="card-subtitle text-muted">房间 ' + roomId + '</h6><h5 class="card-title">' + title + '</h5><p class="card-text small">人气 ' + online + ' · ' + area + '<br><span class="text-muted">更新于 ' + updateTime + '</span></p></div><button class="delete-room-btn btn btn-outline-danger btn-sm" data-room="' + roomId + '">删除</button></div></div></div>';
+    roomsHtml += '<div class="col"><div class="card room-card h-100"><div class="card-body d-flex align-items-start"><span class="status-dot ' + dotClass + '"></span><div class="flex-grow-1 ms-2"><div class="room-title">' + title + '</div><div class="room-meta">房间 ' + roomId + ' · 人气 ' + online + ' · ' + area + '</div><div class="room-meta small">更新于 ' + updateTime + '</div></div><button class="delete-room-btn btn btn-outline-danger btn-sm" data-room="' + roomId + '">删除</button></div></div></div>';
   }
   if (!roomsHtml) roomsHtml = '<div class="col-12 text-center text-muted py-4">暂无房间，请添加</div>';
 
@@ -1022,7 +1003,6 @@ export default {
     var path = url.pathname;
     var method = request.method;
 
-    // 日志接口需认证
     if (path === '/logs') {
       if (!isAuthenticated(request, env)) {
         return new Response(JSON.stringify([]), { headers: { 'Content-Type': 'application/json' } });
@@ -1081,13 +1061,10 @@ export default {
       var chat_id = form.get('chat_id') || '';
       var template = form.get('template') || '';
       if (!name || !chat_id) return new Response('缺少必要字段', { status: 400 });
-      // 如果是 telegram 且 api_url 为空，从 tg_token 构建
       if (protocol === 'telegram') {
         var tgToken = form.get('tg_token') || '';
         if (!tgToken) {
-          // 如果已经有完整 api_url 则跳过
           if (api_url && api_url.includes('bot') && api_url.includes('/sendMessage')) {
-            // 保持原样
           } else {
             return new Response('请输入 Bot Token', { status: 400 });
           }
@@ -1095,7 +1072,6 @@ export default {
           api_url = 'https://api.telegram.org/bot' + tgToken + '/sendMessage';
         }
       }
-      // 非 telegram 协议必须提供 api_url
       if (protocol !== 'telegram' && !api_url) {
         return new Response('缺少 API 地址', { status: 400 });
       }
@@ -1229,12 +1205,12 @@ export default {
     return new Response('Not Found', { status: 404 });
   },
   async scheduled(event, env) {
-    await addLog('info', '定时任务触发');
+    await addLog('info', 'Cron检测启动');
     try {
-      await monitorAll(env);
-      await addLog('info', '定时任务完成');
+      var result = await monitorAll(env);
+      await addLog('info', 'Cron检测完成: ' + JSON.stringify(result));
     } catch(e) {
-      await addLog('error', '定时任务异常: ' + e.message);
+      await addLog('error', 'Cron检测异常: ' + e.message);
     }
   }
 };
