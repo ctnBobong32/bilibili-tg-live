@@ -17,7 +17,7 @@ var CONFIG = {
 封面：{{封面}}
 等级：{{等级}} | 粉丝：{{粉丝}} | 关注：{{关注}} | 性别：{{性别}}
 VIP：{{VIP类型}} ({{VIP状态}})
-生日：{{生日}} | 投稿数：{{投稿数}} | 文章数：{{文章数}}
+投稿数：{{投稿数}} | 文章数：{{文章数}}
 签名：{{签名}}
 头像：{{头像}}
 更新时间：{{时间}}`
@@ -297,6 +297,8 @@ async function buildNotification(roomId, current, env, eventType, extra) {
   };
   var eventDisplay = eventNameMap[eventType] || eventType;
 
+  var now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+
   var baseVars = {
     '事件': eventDisplay,
     '主播': anchorName,
@@ -316,11 +318,10 @@ async function buildNotification(roomId, current, env, eventType, extra) {
     '性别': (userInfo && userInfo.sex) || '',
     'VIP类型': vipType,
     'VIP状态': vipStatus,
-    '生日': (userInfo && userInfo.birthday) || '',
     '投稿数': (userInfo && userInfo.archive_count) || 0,
     '文章数': (userInfo && userInfo.article_count) || 0,
     '头像': (userInfo && userInfo.face) || '',
-    '时间': new Date().toLocaleString()
+    '时间': now
   };
 
   var message = '';
@@ -335,7 +336,6 @@ async function buildNotification(roomId, current, env, eventType, extra) {
         if (userInfo.sex) message += '\n性别：' + userInfo.sex;
         if (vipType) message += '\nVIP类型：' + vipType;
         if (vipStatus) message += '\nVIP状态：' + vipStatus;
-        if (userInfo.birthday) message += '\n生日：' + userInfo.birthday;
         if (userInfo.archive_count !== undefined) message += '\n投稿数：' + userInfo.archive_count;
         if (userInfo.article_count !== undefined) message += '\n文章数：' + userInfo.article_count;
       }
@@ -648,7 +648,7 @@ body { background: var(--bg); color: var(--text); transition: 0.3s; }
 封面：{{封面}}
 等级：{{等级}} | 粉丝：{{粉丝}} | 关注：{{关注}} | 性别：{{性别}}
 VIP：{{VIP类型}} ({{VIP状态}})
-生日：{{生日}} | 投稿数：{{投稿数}} | 文章数：{{文章数}}
+投稿数：{{投稿数}} | 文章数：{{文章数}}
 签名：{{签名}}
 头像：{{头像}}
 更新时间：{{时间}}</textarea>
@@ -950,6 +950,7 @@ document.addEventListener('DOMContentLoaded', function() {
         .catch(function(err){ showMessage('导出失败: ' + err.message, 'error'); });
       return;
     }
+    // 删除房间按钮（竖排显示）
     if (btn.classList.contains('delete-room-btn')) {
       var roomId = btn.dataset.room;
       if (!confirm('确定删除房间 ' + roomId + ' 吗？')) return;
@@ -1015,7 +1016,7 @@ async function renderAdminPage(env, message) {
     var online = state.last_online || 0;
     var area = state.last_parent_area ? state.last_parent_area + ' - ' + state.last_area : '未知分区';
     var updateTime = state.last_update ? new Date(state.last_update).toLocaleString() : '从未更新';
-    roomsHtml += '<div class="col"><div class="card room-card h-100"><div class="card-body d-flex align-items-start"><span class="status-dot ' + dotClass + '"></span><div class="flex-grow-1 ms-2"><div class="room-title">' + title + '</div><div class="room-meta">房间 ' + roomId + ' · 人气 ' + online + ' · ' + area + '</div><div class="room-meta small">更新于 ' + updateTime + '</div></div><button class="delete-room-btn btn btn-outline-danger btn-sm" data-room="' + roomId + '">删除</button></div></div></div>';
+    roomsHtml += '<div class="col"><div class="card room-card h-100"><div class="card-body d-flex align-items-start"><span class="status-dot ' + dotClass + '"></span><div class="flex-grow-1 ms-2"><div class="room-title">' + title + '</div><div class="room-meta">房间 ' + roomId + ' · 人气 ' + online + ' · ' + area + '</div><div class="room-meta small">更新于 ' + updateTime + '</div></div><button class="delete-room-btn btn btn-outline-danger btn-sm" data-room="' + roomId + '" style="writing-mode: vertical-rl; letter-spacing: 2px; padding: 4px 6px; height: auto; min-height: 60px; line-height: 1.2;">删除</button></div></div></div>';
   }
   if (!roomsHtml) roomsHtml = '<div class="col-12 text-center text-muted py-4">暂无房间，请添加</div>';
 
