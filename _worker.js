@@ -8,7 +8,19 @@ var CONFIG = {
   LIVE_CACHE_TTL: 30,
   MAX_LEVEL: 6,
   POPULARITY_MILESTONES: [1000, 5000, 10000, 50000, 100000, 500000, 1000000],
-  DEFAULT_TEMPLATE: '[{{事件}}] 主播: {{主播}} 标题: {{标题}} 房间号: {{房间号}} 分区: {{父分区}} - {{分区}} 人气: {{人气}} 直播时间: {{直播时间}} 链接: {{直播链接}} 封面: {{封面}} UID: {{UID}} 等级: {{等级}} 粉丝: {{粉丝}} 签名: {{签名}}'
+  DEFAULT_TEMPLATE: `[{{事件}}] {{主播}}
+标题：{{标题}}
+房间号：{{房间号}} | UID：{{UID}}
+分区：{{父分区}} - {{分区}}
+人气：{{人气}} | 直播时间：{{直播时间}}
+直播间链接：{{直播链接}}
+封面：{{封面}}
+等级：{{等级}} | 粉丝：{{粉丝}} | 关注：{{关注}} | 性别：{{性别}}
+VIP：{{VIP类型}} ({{VIP状态}})
+生日：{{生日}} | 投稿数：{{投稿数}} | 文章数：{{文章数}}
+签名：{{签名}}
+头像：{{头像}}
+更新时间：{{时间}}`
 };
 
 function toRoomId(id) {
@@ -136,7 +148,6 @@ async function clearPageCache() {
   await cache.delete(new Request('https://cache/admin'));
 }
 
-// 日志操作 - 使用 KV 存储
 async function getLogs(env) {
   var data = await env.ROOM_STORE.get('system_logs', 'json');
   return data || [];
@@ -276,8 +287,18 @@ async function buildNotification(roomId, current, env, eventType, extra) {
 
   var levelDisplay = formatLevel(userInfo ? userInfo.level : 0);
 
+  var eventNameMap = {
+    'live_start': '开播',
+    'live_end': '直播结束',
+    'title_change': '标题修改',
+    'cover_change': '封面变化',
+    'area_change': '分区切换',
+    'popularity_milestone': '人气里程碑'
+  };
+  var eventDisplay = eventNameMap[eventType] || eventType;
+
   var baseVars = {
-    '事件': eventType,
+    '事件': eventDisplay,
     '主播': anchorName,
     '标题': current.title || '未知',
     'UID': current.uid || '',
@@ -400,7 +421,6 @@ async function processRoom(roomId, env, options) {
     }
   }
 
-  // 检测是否变化，避免无意义写入
   var changed = (prev.state !== state) ||
                 (prev.last_title !== (current.title || '')) ||
                 (normalizeCover(prev.last_cover) !== normalizeCover(current.user_cover)) ||
@@ -619,7 +639,7 @@ body { background: var(--bg); color: var(--text); transition: 0.3s; }
             </div>
             <div class="col-12">
               <label class="form-label">通知模板 (可选)</label>
-              <textarea name="template" id="templateArea" class="form-control" rows="3" placeholder="[{{事件}}] 主播: {{主播}} 标题: {{标题}} 人气: {{人气}}"></textarea>
+              <textarea name="template" id="templateArea" class="form-control" rows="6"></textarea>
             </div>
             <div class="col-12">
               <button type="submit" class="btn btn-primary"><i class="bi bi-plus-circle"></i> 添加配置</button>
@@ -766,10 +786,10 @@ document.addEventListener('DOMContentLoaded', function() {
   fetchLogs();
 
   var DEFAULT_TEMPLATES = {
-    telegram: '[{{事件}}] 主播: {{主播}} 标题: {{标题}} 人气: {{人气}} 直播时间: {{直播时间}} 链接: {{直播链接}}',
-    onebot_private: '[{{事件}}] {{主播}} {{标题}} 房间: {{房间号}} 人气: {{人气}}',
-    onebot_group: '[{{事件}}] {{主播}} {{标题}} 房间: {{房间号}} 人气: {{人气}}',
-    discord: '**{{事件}}** 主播: {{主播}} 标题: {{标题}} 人气: {{人气}} 链接: {{直播链接}}',
+    telegram: '[{{事件}}] {{主播}}\n标题：{{标题}}\n人气：{{人气}} | 直播时间：{{直播时间}}\n链接：{{直播链接}}',
+    onebot_private: '[{{事件}}] {{主播}}\n标题：{{标题}}\n房间：{{房间号}} | 人气：{{人气}}',
+    onebot_group: '[{{事件}}] {{主播}}\n标题：{{标题}}\n房间：{{房间号}} | 人气：{{人气}}',
+    discord: '**{{事件}}** 主播: {{主播}}\n标题：{{标题}}\n人气：{{人气}}\n链接：{{直播链接}}',
     custom_webhook: '{"event":"{{事件}}","anchor":"{{主播}}","title":"{{标题}}","room":"{{房间号}}","online":"{{人气}}","cover":"{{封面}}"}'
   };
 
@@ -780,42 +800,42 @@ document.addEventListener('DOMContentLoaded', function() {
     var receiverLabel = document.getElementById('receiverLabel');
     var chatId = document.getElementById('chatId');
 
+    if (!template.dataset.userModified || template.dataset.userModified === 'false') {
+      template.value = CONFIG.DEFAULT_TEMPLATE;
+      template.dataset.userModified = 'false';
+    }
+
     if (val === 'telegram') {
       tgTokenGroup.style.display = 'block';
       receiverLabel.textContent = '接收者 ID (chat_id)';
       chatId.placeholder = '例如：123456789';
-      if (!template.value.trim()) {
-        template.value = DEFAULT_TEMPLATES.telegram;
-      }
+      template.placeholder = '示例模板（可修改）';
     } else {
       tgTokenGroup.style.display = 'none';
       if (val === 'onebot_private') {
         receiverLabel.textContent = '用户 ID (user_id)';
         chatId.placeholder = '例如：123456789';
-        if (!template.value.trim()) {
-          template.value = DEFAULT_TEMPLATES.onebot_private;
-        }
+        template.placeholder = '示例模板（可修改）';
       } else if (val === 'onebot_group') {
         receiverLabel.textContent = '群 ID (group_id)';
         chatId.placeholder = '例如：123456789';
-        if (!template.value.trim()) {
-          template.value = DEFAULT_TEMPLATES.onebot_group;
-        }
+        template.placeholder = '示例模板（可修改）';
       } else if (val === 'discord') {
         receiverLabel.textContent = '无 (使用 Webhook URL)';
         chatId.placeholder = '可不填';
-        if (!template.value.trim()) {
-          template.value = DEFAULT_TEMPLATES.discord;
-        }
+        template.placeholder = '示例模板（可修改）';
       } else if (val === 'custom_webhook') {
         receiverLabel.textContent = '无 (使用 Webhook URL)';
         chatId.placeholder = '可不填';
-        if (!template.value.trim()) {
-          template.value = DEFAULT_TEMPLATES.custom_webhook;
-        }
+        template.placeholder = '示例模板（可修改）';
       }
     }
+
+    template.addEventListener('input', function() {
+      this.dataset.userModified = 'true';
+    }, { once: true });
   }
+
   document.getElementById('protocolSelect').addEventListener('change', updateNotifyForm);
   updateNotifyForm();
 
@@ -1030,7 +1050,7 @@ async function renderAdminPage(env, message) {
       logsHtml += '<div class="log-entry"><span class="log-time">' + escapeHtml(entry.time) + '</span><span class="' + levelColor + '">[' + escapeHtml(entry.level.toUpperCase()) + ']</span> ' + escapeHtml(entry.message) + '</div>';
     });
   }
-  // 替换日志占位
+
   var html = HTML_TEMPLATE.replace('{{ROOMS}}', roomsHtml).replace('{{CONFIGS}}', configsHtml).replace('{{LOGS}}', logsHtml);
   if (message) {
     var msgHtml = '<div class="alert alert-success alert-dismissible fade show" role="alert">' + message + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
@@ -1039,7 +1059,6 @@ async function renderAdminPage(env, message) {
   return html;
 }
 
-// 辅助 escapeHtml 用于渲染
 function escapeHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
