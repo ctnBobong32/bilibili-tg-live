@@ -332,7 +332,7 @@ async function processRoom(roomId, env, options) {
   }
   var isLive = CONFIG.IS_LIVE_STATUS.includes(current.live_status);
   var state = isLive ? 'LIVE' : 'OFFLINE';
-  var prev = await getMonitorState(env, roomId);
+  // 注意：这里不再重复声明 prev
   var oldState = prev.state || 'OFFLINE';
   var events = [];
 
@@ -510,7 +510,7 @@ var HTML_TEMPLATE = `
             </div>
             <div class="col-md-4 d-none" id="tgTokenGroup">
               <label class="form-label">Bot Token</label>
-              <input type="text" id="tgToken" class="form-control" placeholder="例如：123456:ABC-DEF...">
+              <input type="text" id="tgToken" name="tg_token" class="form-control" placeholder="例如：123456:ABC-DEF...">
               <small class="text-muted">系统将自动构建 API 地址</small>
             </div>
             <div class="col-md-4">
@@ -608,15 +608,55 @@ document.addEventListener('DOMContentLoaded', function() {
   var addRoomModal = new bootstrap.Modal(document.getElementById('addRoomModal'));
   var customModal = new bootstrap.Modal(document.getElementById('customModal'));
 
+  // 清理 modal backdrop 残留
+  function clearModalBackdrop() {
+    document.querySelectorAll('.modal-backdrop').forEach(function(el) { el.remove(); });
+    document.body.classList.remove('modal-open');
+    document.body.style = '';
+  }
+
+  // Tab 状态持久化
+  function saveTab() {
+    var active = document.querySelector('.nav-link.active');
+    if (active) {
+      localStorage.setItem('activeTab', active.id);
+    }
+  }
+  document.querySelectorAll('[data-bs-toggle="tab"]').forEach(function(tab) {
+    tab.addEventListener('shown.bs.tab', saveTab);
+  });
+  var savedTab = localStorage.getItem('activeTab');
+  if (savedTab) {
+    var tabEl = document.getElementById(savedTab);
+    if (tabEl) {
+      new bootstrap.Tab(tabEl).show();
+    }
+  }
+
+  // 浮动提示框
   function showMessage(msg, type) {
     type = type || 'info';
-    var area = document.getElementById('messageArea');
-    var classes = {
-      info: 'alert alert-info',
-      error: 'alert alert-danger',
-      warn: 'alert alert-warning'
-    };
-    area.innerHTML = '<div class="' + (classes[type] || classes.info) + ' alert-dismissible fade show" role="alert">' + msg + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+    var box = document.createElement('div');
+    box.className = 'position-fixed top-0 start-50 translate-middle-x mt-3 alert alert-' + (type === 'error' ? 'danger' : type === 'warn' ? 'warning' : 'success');
+    box.style.zIndex = '99999';
+    box.style.minWidth = '320px';
+    box.style.textAlign = 'center';
+    box.innerHTML = msg;
+    document.body.appendChild(box);
+    setTimeout(function() {
+      box.style.transition = 'opacity .5s';
+      box.style.opacity = '0';
+      setTimeout(function() { box.remove(); }, 500);
+    }, 5000);
+  }
+
+  // 日志渲染（转义）
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 
   function renderLogs(logs) {
@@ -633,7 +673,7 @@ document.addEventListener('DOMContentLoaded', function() {
     var html = '';
     filtered.forEach(function(entry) {
       var levelColor = { info: 'text-info', warn: 'text-warning', error: 'text-danger' }[entry.level] || '';
-      html += '<div><span class="text-secondary">' + entry.time + '</span> <span class="' + levelColor + '">[' + entry.level.toUpperCase() + ']</span> ' + entry.message + '</div>';
+      html += '<div><span class="text-secondary">' + escapeHtml(entry.time) + '</span> <span class="' + levelColor + '">[' + escapeHtml(entry.level.toUpperCase()) + ']</span> ' + escapeHtml(entry.message) + '</div>';
     });
     container.innerHTML = html;
   }
@@ -642,6 +682,7 @@ document.addEventListener('DOMContentLoaded', function() {
     axios.get('/logs').then(function(res) { renderLogs(res.data); }).catch(function(e) { console.error('获取日志失败', e); });
   }
 
+  // 主题切换
   document.getElementById('themeToggle').addEventListener('click', function() {
     var html = document.documentElement;
     var theme = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
@@ -653,10 +694,12 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('themeToggle').textContent = '亮色';
   }
 
+  // 退出
   document.getElementById('logoutBtn').addEventListener('click', function() {
     document.getElementById('logoutForm').submit();
   });
 
+  // 日志自动刷新
   var logTimer = null;
   document.getElementById('autoRefresh').addEventListener('change', function() {
     if (this.checked) { logTimer = setInterval(fetchLogs, 5000); fetchLogs(); }
@@ -668,6 +711,7 @@ document.addEventListener('DOMContentLoaded', function() {
   logTimer = setInterval(fetchLogs, 5000);
   fetchLogs();
 
+  // 协议切换
   function updateNotifyForm() {
     var val = document.getElementById('protocolSelect').value;
     var apiUrlGroup = document.getElementById('apiUrlGroup');
@@ -716,6 +760,7 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('protocolSelect').addEventListener('change', updateNotifyForm);
   updateNotifyForm();
 
+  // 添加通知
   document.getElementById('addNotifyForm').addEventListener('submit', function(e) {
     e.preventDefault();
     var form = this;
@@ -727,14 +772,16 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     var formData = new FormData(form);
     axios.post('/add-notify', formData, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
-      .then(function(res) {
-        location.reload();
+      .then(function() {
+        showMessage('配置添加成功', 'info');
+        setTimeout(function() { location.reload(); }, 1200);
       })
       .catch(function(err) {
         showMessage('添加失败: ' + (err.response ? err.response.data : err.message), 'error');
       });
   });
 
+  // 事件委托：所有按钮
   document.addEventListener('click', function(e) {
     var btn = e.target.closest('button');
     if (!btn) return;
@@ -755,8 +802,9 @@ document.addEventListener('DOMContentLoaded', function() {
       axios.post('/add-room', formData, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
         .then(function() {
           addRoomModal.hide();
+          setTimeout(clearModalBackdrop, 300);
           showMessage('房间 ' + roomId + ' 已添加', 'info');
-          setTimeout(function() { location.reload(); }, 1000);
+          setTimeout(function() { location.reload(); }, 1200);
         })
         .catch(function(err) {
           showMessage('添加失败: ' + (err.response ? err.response.data : err.message), 'error');
@@ -835,6 +883,7 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('modalMessage').textContent = '确定清除所有日志吗？';
       document.getElementById('modalConfirmBtn').onclick = function() {
         customModal.hide();
+        setTimeout(clearModalBackdrop, 300);
         axios.post('/clear-logs')
           .then(function() {
             showMessage('日志已清除', 'info');
@@ -847,6 +896,27 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('modalCancelBtn').onclick = function() { customModal.hide(); };
       return;
     }
+    // 删除房间（动态生成的按钮）
+    if (btn.classList.contains('delete-room-btn')) {
+      var roomId = btn.dataset.room;
+      if (!confirm('确定删除房间 ' + roomId + ' 吗？')) return;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+      var formData = new URLSearchParams();
+      formData.append('room_id', roomId);
+      axios.post('/remove-room', formData, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
+        .then(function() {
+          showMessage('房间 ' + roomId + ' 已删除', 'info');
+          setTimeout(function() { location.reload(); }, 1200);
+        })
+        .catch(function(err) {
+          showMessage('删除失败: ' + (err.response ? err.response.data : err.message), 'error');
+          btn.disabled = false;
+          btn.innerHTML = '删除';
+        });
+      return;
+    }
+    // 测试/切换配置
     if (btn.classList.contains('test-btn')) {
       var id = btn.dataset.id;
       btn.disabled = true;
@@ -886,10 +956,16 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
+  // 添加房间模态框回车提交
   document.getElementById('roomInput').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') {
       document.getElementById('addRoomConfirmBtn').click();
     }
+  });
+
+  // 清理所有 modal backdrop（全局）
+  document.addEventListener('hidden.bs.modal', function() {
+    setTimeout(clearModalBackdrop, 300);
   });
 
 });
@@ -917,7 +993,7 @@ async function renderAdminPage(env, message) {
     var online = state.last_online || 0;
     var area = state.last_parent_area ? state.last_parent_area + ' - ' + state.last_area : '未知分区';
     var updateTime = state.last_update ? new Date(state.last_update).toLocaleString() : '从未更新';
-    roomsHtml += '<div class="col"><div class="card h-100"><div class="card-body d-flex align-items-start"><div class="flex-shrink-0"><span class="badge bg-' + statusColor + ' rounded-pill me-2">' + statusText + '</span></div><div class="flex-grow-1"><h6 class="card-subtitle text-muted">房间 ' + roomId + '</h6><h5 class="card-title">' + title + '</h5><p class="card-text small">人气 ' + online + ' · ' + area + '<br><span class="text-muted">更新于 ' + updateTime + '</span></p></div><form method="POST" action="/remove-room" class="flex-shrink-0" onsubmit="return confirm(\'确定删除房间 \'+this.room_id.value+\' 吗？\')"><input type="hidden" name="room_id" value="' + roomId + '"><button type="submit" class="btn btn-outline-danger btn-sm">删除</button></form></div></div></div>';
+    roomsHtml += '<div class="col"><div class="card h-100"><div class="card-body d-flex align-items-start"><div class="flex-shrink-0"><span class="badge bg-' + statusColor + ' rounded-pill me-2">' + statusText + '</span></div><div class="flex-grow-1"><h6 class="card-subtitle text-muted">房间 ' + roomId + '</h6><h5 class="card-title">' + title + '</h5><p class="card-text small">人气 ' + online + ' · ' + area + '<br><span class="text-muted">更新于 ' + updateTime + '</span></p></div><button class="delete-room-btn btn btn-outline-danger btn-sm" data-room="' + roomId + '">删除</button></div></div></div>';
   }
   if (!roomsHtml) roomsHtml = '<div class="col-12 text-center text-muted py-4">暂无房间，请添加</div>';
 
@@ -945,16 +1021,23 @@ export default {
     var url = new URL(request.url);
     var path = url.pathname;
     var method = request.method;
+
+    // 日志接口需认证
     if (path === '/logs') {
+      if (!isAuthenticated(request, env)) {
+        return new Response(JSON.stringify([]), { headers: { 'Content-Type': 'application/json' } });
+      }
       var logs = await getLogs();
       return new Response(JSON.stringify(logs), { headers: { 'Content-Type': 'application/json' } });
     }
+
     var needAuth = ['/clear-logs', '/send-live-notify', '/add-notify', '/delete-notify', '/toggle-notify', '/test-notify', '/admin', '/add-room', '/remove-room', '/check', '/monitor'];
     if (needAuth.includes(path) || path === '/') {
       if (!isAuthenticated(request, env)) {
         return new Response(renderLoginPage(), { headers: { 'Content-Type': 'text/html' }, status: 401 });
       }
     }
+
     if (path === '/clear-logs') {
       await clearLogs();
       return new Response(JSON.stringify({ success: true }));
@@ -998,10 +1081,13 @@ export default {
       var chat_id = form.get('chat_id') || '';
       var template = form.get('template') || '';
       if (!name || !chat_id) return new Response('缺少必要字段', { status: 400 });
+      // 如果是 telegram 且 api_url 为空，从 tg_token 构建
       if (protocol === 'telegram') {
         var tgToken = form.get('tg_token') || '';
         if (!tgToken) {
+          // 如果已经有完整 api_url 则跳过
           if (api_url && api_url.includes('bot') && api_url.includes('/sendMessage')) {
+            // 保持原样
           } else {
             return new Response('请输入 Bot Token', { status: 400 });
           }
@@ -1009,7 +1095,10 @@ export default {
           api_url = 'https://api.telegram.org/bot' + tgToken + '/sendMessage';
         }
       }
-      if (!api_url) return new Response('缺少 API 地址', { status: 400 });
+      // 非 telegram 协议必须提供 api_url
+      if (protocol !== 'telegram' && !api_url) {
+        return new Response('缺少 API 地址', { status: 400 });
+      }
       var receiver_key = 'chat_id', message_key = 'text';
       if (protocol === 'onebot_private') { receiver_key = 'user_id'; message_key = 'message'; }
       else if (protocol === 'onebot_group') { receiver_key = 'group_id'; message_key = 'message'; }
