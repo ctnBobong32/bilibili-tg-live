@@ -53,14 +53,104 @@ async function fetchUserInfo(uid) { const cacheKey = buildCacheKey('userinfo', u
 async function sendNotificationToConfig(config, text, extra) { extra = extra || {}; try { let payload = {}; if (config.protocol === 'discord') { payload = { content: text }; } else if (config.protocol === 'custom_webhook') { payload = extra; } else { const receiverKey = config.receiver_key || 'chat_id'; const messageKey = config.message_key || 'text'; payload[receiverKey] = config.chat_id; payload[messageKey] = text; } if (config.extra_params) Object.assign(payload, config.extra_params); const resp = await fetch(config.api_url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); if (resp.ok) return { success: true }; const errText = await resp.text(); return { success: false, error: errText }; } catch (e) { return { success: false, error: e.message }; } }
 async function sendNotification(text, env, extra) { extra = extra || {}; const configs = await getNotifyConfigs(env); const enabled = configs.filter(c => c.enabled); if (enabled.length === 0) { await addLog('warn', '没有启用的通知配置', env); return false; } let success = false; for (const config of enabled) { const result = await sendNotificationToConfig(config, text, extra); if (result.success) success = true; } return success; }
 
-async function buildNotification(roomId, current, env, eventType, extra) { extra = extra || {}; let userInfo = null; try { userInfo = await fetchUserInfo(current.uid); } catch (e) {} const anchorName = (userInfo && userInfo.name) ? userInfo.name : '房间 ' + roomId; const vipTypeMap = { 0: '无', 1: '月度大会员', 2: '年度大会员' }; const vipType = (userInfo && userInfo.vip_type !== undefined) ? vipTypeMap[userInfo.vip_type] || userInfo.vip_type : ''; const vipStatus = (userInfo && userInfo.vip_status !== undefined) ? (userInfo.vip_status === 1 ? '已开通' : '未开通') : ''; const levelDisplay = formatLevel(userInfo ? userInfo.level : 0); const eventNameMap = { 'live_start': '开播', 'live_end': '直播结束', 'title_change': '标题修改', 'cover_change': '封面变化', 'area_change': '分区切换', 'popularity_milestone': '人气里程碑' }; const eventDisplay = eventNameMap[eventType] || eventType; const now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }); const baseVars = { '事件': eventDisplay, '主播': anchorName, '标题': current.title || '未知', 'UID': current.uid || '', '房间号': current.room_id || roomId, '直播时间': current.live_time || '', '直播链接': 'https://live.bilibili.com/' + (current.room_id || roomId), '分区': current.area_name || '未知', '父分区': current.parent_area_name || '未知', '人气': current.online || 0, '封面': current.user_cover || '', '签名': (userInfo && userInfo.sign) || '', '粉丝': (userInfo && userInfo.follower) || 0, '关注': (userInfo && userInfo.following) || 0, '等级': levelDisplay, '性别': (userInfo && userInfo.sex) || '', 'VIP类型': vipType, 'VIP状态': vipStatus, '投稿数': (userInfo && userInfo.archive_count) || 0, '文章数': (userInfo && userInfo.article_count) || 0, '头像': (userInfo && userInfo.face) || '', '时间': now }; const configs = await getNotifyConfigs(env); let template = null; for (const cfg of configs) { if (cfg.template && cfg.template.trim()) { template = cfg.template; break; } } return renderTemplate(template, baseVars); }
+// ========== 构建通知（核心修改）==========
+async function buildNotification(roomId, current, env, eventType, extra) {
+  extra = extra || {};
+  let userInfo = null;
+  try {
+    userInfo = await fetchUserInfo(current.uid);
+  } catch (e) {}
+
+  const anchorName = (userInfo && userInfo.name) ? userInfo.name : '房间 ' + roomId;
+
+  // 东八区当前时间
+  const now = new Date();
+  const shanghaiNow = now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+
+  // ----- 直播结束：精简通知 -----
+  if (eventType === 'live_end') {
+    const endTime = shanghaiNow;
+    // 计算直播时长
+    let duration = '';
+    if (current.live_time) {
+      const start = new Date(current.live_time);
+      const end = new Date();
+      const diffMs = end - start;
+      if (diffMs > 0) {
+        const diffMin = Math.floor(diffMs / 60000);
+        const hours = Math.floor(diffMin / 60);
+        const minutes = diffMin % 60;
+        duration = (hours > 0 ? hours + '小时' : '') + minutes + '分钟';
+      }
+    }
+
+    let message = `[直播结束] ${anchorName}\n结束时间：${endTime}\n房间号：${current.room_id || roomId}\n人气：${current.online || 0}`;
+    if (duration) {
+      message += `\n直播时长：${duration}`;
+    }
+    return message;
+  }
+
+  // ----- 其他事件（开播、标题修改等）使用完整模板 -----
+  const vipTypeMap = { 0: '无', 1: '月度大会员', 2: '年度大会员' };
+  const vipType = (userInfo && userInfo.vip_type !== undefined) ? vipTypeMap[userInfo.vip_type] || userInfo.vip_type : '';
+  const vipStatus = (userInfo && userInfo.vip_status !== undefined) ? (userInfo.vip_status === 1 ? '已开通' : '未开通') : '';
+  const levelDisplay = formatLevel(userInfo ? userInfo.level : 0);
+
+  const eventNameMap = {
+    'live_start': '开播',
+    'title_change': '标题修改',
+    'cover_change': '封面变化',
+    'area_change': '分区切换',
+    'popularity_milestone': '人气里程碑'
+  };
+  const eventDisplay = eventNameMap[eventType] || eventType;
+
+  const baseVars = {
+    '事件': eventDisplay,
+    '主播': anchorName,
+    '标题': current.title || '未知',
+    'UID': current.uid || '',
+    '房间号': current.room_id || roomId,
+    '直播时间': current.live_time || '',
+    '直播链接': 'https://live.bilibili.com/' + (current.room_id || roomId),
+    '分区': current.area_name || '未知',
+    '父分区': current.parent_area_name || '未知',
+    '人气': current.online || 0,
+    '封面': current.user_cover || '',
+    '签名': (userInfo && userInfo.sign) || '',
+    '粉丝': (userInfo && userInfo.follower) || 0,
+    '关注': (userInfo && userInfo.following) || 0,
+    '等级': levelDisplay,
+    '性别': (userInfo && userInfo.sex) || '',
+    'VIP类型': vipType,
+    'VIP状态': vipStatus,
+    '投稿数': (userInfo && userInfo.archive_count) || 0,
+    '文章数': (userInfo && userInfo.article_count) || 0,
+    '头像': (userInfo && userInfo.face) || '',
+    '时间': shanghaiNow
+  };
+
+  const configs = await getNotifyConfigs(env);
+  let template = null;
+  for (const cfg of configs) {
+    if (cfg.template && cfg.template.trim()) {
+      template = cfg.template;
+      break;
+    }
+  }
+  if (!template) {
+    template = CONFIG.DEFAULT_TEMPLATE;
+  }
+  return renderTemplate(template, baseVars);
+}
 
 // ========== 监控逻辑 ==========
 async function processRoom(roomId, env, options) {
   options = options || {};
   roomId = toRoomId(roomId);
   let current;
-  let prev; // 声明在 try 外部，以便在 try 外使用
+  let prev; // 声明在 try 外部
   try {
     current = await fetchLiveStatus(roomId);
     const liveStatus = Number(current.live_status ?? current.livestatus ?? current.liveStatus ?? 0);
@@ -113,6 +203,9 @@ async function processRoom(roomId, env, options) {
                   (prev.last_online !== Number(current.online || 0));
 
   if (changed) {
+    // 使用东八区时间写入
+    const now = new Date();
+    const shanghaiTime = now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
     const newState = {
       room_id: roomId,
       state: state,
@@ -123,7 +216,7 @@ async function processRoom(roomId, env, options) {
       last_parent_area: current.parent_area_name || '',
       last_online: Number(current.online || 0),
       last_events: events.map(e => e.type),
-      last_update: new Date().toISOString(),
+      last_update: shanghaiTime,
       last_check: Date.now(),
       version: 3
     };
