@@ -11,6 +11,7 @@ const CONFIG = {
   DEFAULT_TEMPLATE: `[{{事件}}] {{主播}}\n标题：{{标题}}\n房间号：{{房间号}} | UID：{{UID}}\n分区：{{父分区}} - {{分区}}\n人气：{{人气}} | 直播时间：{{直播时间}}\n直播间链接：{{直播链接}}\n封面：{{封面}}\n等级：{{等级}} | 粉丝：{{粉丝}} | 关注：{{关注}} | 性别：{{性别}}\nVIP：{{VIP类型}} ({{VIP状态}})\n投稿数：{{投稿数}} | 文章数：{{文章数}}\n签名：{{签名}}\n头像：{{头像}}\n更新时间：{{时间}}`
 };
 
+// ========== 工具函数 ==========
 function toRoomId(id) { return String(id).trim(); }
 function buildCacheKey(...parts) { return parts.join(':'); }
 function normalizeCover(url) { if (!url) return ''; return url.split('?')[0].trim(); }
@@ -55,7 +56,91 @@ async function sendNotification(text, env, extra) { extra = extra || {}; const c
 async function buildNotification(roomId, current, env, eventType, extra) { extra = extra || {}; let userInfo = null; try { userInfo = await fetchUserInfo(current.uid); } catch (e) {} const anchorName = (userInfo && userInfo.name) ? userInfo.name : '房间 ' + roomId; const vipTypeMap = { 0: '无', 1: '月度大会员', 2: '年度大会员' }; const vipType = (userInfo && userInfo.vip_type !== undefined) ? vipTypeMap[userInfo.vip_type] || userInfo.vip_type : ''; const vipStatus = (userInfo && userInfo.vip_status !== undefined) ? (userInfo.vip_status === 1 ? '已开通' : '未开通') : ''; const levelDisplay = formatLevel(userInfo ? userInfo.level : 0); const eventNameMap = { 'live_start': '开播', 'live_end': '直播结束', 'title_change': '标题修改', 'cover_change': '封面变化', 'area_change': '分区切换', 'popularity_milestone': '人气里程碑' }; const eventDisplay = eventNameMap[eventType] || eventType; const now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }); const baseVars = { '事件': eventDisplay, '主播': anchorName, '标题': current.title || '未知', 'UID': current.uid || '', '房间号': current.room_id || roomId, '直播时间': current.live_time || '', '直播链接': 'https://live.bilibili.com/' + (current.room_id || roomId), '分区': current.area_name || '未知', '父分区': current.parent_area_name || '未知', '人气': current.online || 0, '封面': current.user_cover || '', '签名': (userInfo && userInfo.sign) || '', '粉丝': (userInfo && userInfo.follower) || 0, '关注': (userInfo && userInfo.following) || 0, '等级': levelDisplay, '性别': (userInfo && userInfo.sex) || '', 'VIP类型': vipType, 'VIP状态': vipStatus, '投稿数': (userInfo && userInfo.archive_count) || 0, '文章数': (userInfo && userInfo.article_count) || 0, '头像': (userInfo && userInfo.face) || '', '时间': now }; const configs = await getNotifyConfigs(env); let template = null; for (const cfg of configs) { if (cfg.template && cfg.template.trim()) { template = cfg.template; break; } } return renderTemplate(template, baseVars); }
 
 // ========== 监控逻辑 ==========
-async function processRoom(roomId, env, options) { options = options || {}; roomId = toRoomId(roomId); let current; try { current = await fetchLiveStatus(roomId); const liveStatus = Number(current.live_status ?? current.livestatus ?? current.liveStatus ?? 0); current.live_status = liveStatus; const prev = await getMonitorState(env, roomId); await addLog('info', '[' + roomId + '] 检查: API状态=' + liveStatus + ', 人气=' + (current.online || 0) + ', 标题=' + (current.title || '未知') + ', 旧状态=' + (prev.state || '未知'), env); } catch (e) { await addLog('error', '[' + roomId + '] 获取状态失败: ' + e.message, env); return { error: e.message }; } const isLive = CONFIG.IS_LIVE_STATUS.includes(current.live_status); const state = isLive ? 'LIVE' : 'OFFLINE'; const oldState = prev.state || 'OFFLINE'; const events = []; if (oldState !== state) { await addLog('info', '[' + roomId + '] 状态变化: ' + oldState + ' -> ' + state, env); if (state === 'LIVE') { events.push({ type: 'live_start', data: current }); } else { events.push({ type: 'live_end', data: current }); } } else if (state === 'LIVE') { const oldTitle = (prev.last_title || '').trim(); const newTitle = (current.title || '').trim(); if (oldTitle && oldTitle !== newTitle) { events.push({ type: 'title_change', data: current, old_title: prev.last_title || '' }); } if (normalizeCover(prev.last_cover) !== normalizeCover(current.user_cover)) { events.push({ type: 'cover_change', data: current, old_cover: prev.last_cover }); } if (String(prev.last_area || '') !== String(current.area_name || '') || String(prev.last_parent_area || '') !== String(current.parent_area_name || '')) { events.push({ type: 'area_change', data: current, old_area: prev.last_area || '', old_parent_area: prev.last_parent_area || '' }); } const prevOnline = prev.last_online || 0; for (const milestone of CONFIG.POPULARITY_MILESTONES) { if (prevOnline < milestone && current.online >= milestone) { events.push({ type: 'popularity_milestone', data: current, milestone: milestone }); } } } const changed = (prev.state !== state) || (prev.last_title !== (current.title || '')) || (normalizeCover(prev.last_cover) !== normalizeCover(current.user_cover)) || (prev.last_area !== (current.area_name || '')) || (prev.last_parent_area !== (current.parent_area_name || '')) || (prev.last_online !== Number(current.online || 0)); if (changed) { const newState = { room_id: roomId, state: state, last_live_time: current.live_time || prev.last_live_time || '', last_title: current.title || '', last_cover: current.user_cover || '', last_area: current.area_name || '', last_parent_area: current.parent_area_name || '', last_online: Number(current.online || 0), last_events: events.map(e => e.type), last_update: new Date().toISOString(), last_check: Date.now(), version: 3 }; await setMonitorState(env, roomId, newState); } for (const evt of events) { const text = await buildNotification(roomId, evt.data, env, evt.type, evt); const success = await sendNotification(text, env, { event: evt.type, room_id: roomId, ...evt.data }); if (success) { await addLog('info', '[' + roomId + '] 事件 ' + evt.type + ' 已通知', env); } else { await addLog('error', '[' + roomId + '] 事件 ' + evt.type + ' 发送失败', env); } } return { state: state, events: events }; }
+async function processRoom(roomId, env, options) {
+  options = options || {};
+  roomId = toRoomId(roomId);
+  let current;
+  let prev; // 声明在 try 外部，以便在 try 外使用
+  try {
+    current = await fetchLiveStatus(roomId);
+    const liveStatus = Number(current.live_status ?? current.livestatus ?? current.liveStatus ?? 0);
+    current.live_status = liveStatus;
+    prev = await getMonitorState(env, roomId);
+    await addLog('info', '[' + roomId + '] 检查: API状态=' + liveStatus + ', 人气=' + (current.online || 0) + ', 标题=' + (current.title || '未知') + ', 旧状态=' + (prev.state || '未知'), env);
+  } catch (e) {
+    await addLog('error', '[' + roomId + '] 获取状态失败: ' + e.message, env);
+    return { error: e.message };
+  }
+
+  const isLive = CONFIG.IS_LIVE_STATUS.includes(current.live_status);
+  const state = isLive ? 'LIVE' : 'OFFLINE';
+  const oldState = prev.state || 'OFFLINE';
+  const events = [];
+
+  if (oldState !== state) {
+    await addLog('info', '[' + roomId + '] 状态变化: ' + oldState + ' -> ' + state, env);
+    if (state === 'LIVE') {
+      events.push({ type: 'live_start', data: current });
+    } else {
+      events.push({ type: 'live_end', data: current });
+    }
+  } else if (state === 'LIVE') {
+    const oldTitle = (prev.last_title || '').trim();
+    const newTitle = (current.title || '').trim();
+    if (oldTitle && oldTitle !== newTitle) {
+      events.push({ type: 'title_change', data: current, old_title: prev.last_title || '' });
+    }
+    if (normalizeCover(prev.last_cover) !== normalizeCover(current.user_cover)) {
+      events.push({ type: 'cover_change', data: current, old_cover: prev.last_cover });
+    }
+    if (String(prev.last_area || '') !== String(current.area_name || '') ||
+        String(prev.last_parent_area || '') !== String(current.parent_area_name || '')) {
+      events.push({ type: 'area_change', data: current, old_area: prev.last_area || '', old_parent_area: prev.last_parent_area || '' });
+    }
+    const prevOnline = prev.last_online || 0;
+    for (const milestone of CONFIG.POPULARITY_MILESTONES) {
+      if (prevOnline < milestone && current.online >= milestone) {
+        events.push({ type: 'popularity_milestone', data: current, milestone: milestone });
+      }
+    }
+  }
+
+  const changed = (prev.state !== state) ||
+                  (prev.last_title !== (current.title || '')) ||
+                  (normalizeCover(prev.last_cover) !== normalizeCover(current.user_cover)) ||
+                  (prev.last_area !== (current.area_name || '')) ||
+                  (prev.last_parent_area !== (current.parent_area_name || '')) ||
+                  (prev.last_online !== Number(current.online || 0));
+
+  if (changed) {
+    const newState = {
+      room_id: roomId,
+      state: state,
+      last_live_time: current.live_time || prev.last_live_time || '',
+      last_title: current.title || '',
+      last_cover: current.user_cover || '',
+      last_area: current.area_name || '',
+      last_parent_area: current.parent_area_name || '',
+      last_online: Number(current.online || 0),
+      last_events: events.map(e => e.type),
+      last_update: new Date().toISOString(),
+      last_check: Date.now(),
+      version: 3
+    };
+    await setMonitorState(env, roomId, newState);
+  }
+
+  for (const evt of events) {
+    const text = await buildNotification(roomId, evt.data, env, evt.type, evt);
+    const success = await sendNotification(text, env, { event: evt.type, room_id: roomId, ...evt.data });
+    if (success) {
+      await addLog('info', '[' + roomId + '] 事件 ' + evt.type + ' 已通知', env);
+    } else {
+      await addLog('error', '[' + roomId + '] 事件 ' + evt.type + ' 发送失败', env);
+    }
+  }
+  return { state: state, events: events };
+}
 
 async function monitorAll(env, options) { options = options || {}; const roomIds = await getRoomList(env); if (roomIds.length === 0) { await addLog('warn', '房间列表为空，跳过检查', env); return { error: '房间列表为空' }; } await addLog('info', '开始批量检查 ' + roomIds.length + ' 个房间' + (options.force ? ' (强制刷新)' : ''), env); const results = []; for (const id of roomIds) { const roomId = toRoomId(id); try { const res = await processRoom(roomId, env, { force: options.force }); results.push({ room_id: roomId, ...res }); } catch (e) { await addLog('error', '处理房间 ' + roomId + ' 失败: ' + e.message, env); results.push({ room_id: roomId, error: e.message }); } } await addLog('info', '批量检查完成，共 ' + results.length + ' 个结果', env); return results; }
 
@@ -102,7 +187,6 @@ async function handleRequest(request, env) {
       return new Response(null, { headers: corsHeaders(env) });
     }
 
-    // 登录
     if (path === '/api/login' && method === 'POST') {
       let body; try { body = await request.json(); } catch { body = {}; }
       const { username, password } = body;
@@ -119,7 +203,6 @@ async function handleRequest(request, env) {
       }
     }
 
-    // 登出
     if (path === '/api/logout' && method === 'POST') {
       const headers = {
         ...corsHeaders(env),
@@ -129,7 +212,6 @@ async function handleRequest(request, env) {
       return new Response(JSON.stringify({ success: true }), { headers });
     }
 
-    // 获取当前用户（认证检查）
     if (path === '/api/me' && method === 'GET') {
       if (!isAuthenticated(request, env)) {
         return jsonResponse({ error: '未认证' }, 401, env);
@@ -137,12 +219,10 @@ async function handleRequest(request, env) {
       return jsonResponse({ username: env.ADMIN_USER }, 200, env);
     }
 
-    // 以下所有路由需要认证
     if (!isAuthenticated(request, env)) {
       return jsonResponse({ error: '未认证' }, 401, env);
     }
 
-    // 房间列表
     if (path === '/api/rooms' && method === 'GET') {
       const rooms = await getRoomList(env);
       const states = {};
@@ -152,7 +232,6 @@ async function handleRequest(request, env) {
       return jsonResponse({ rooms, states }, 200, env);
     }
 
-    // 添加房间
     if (path === '/api/rooms' && method === 'POST') {
       let body; try { body = await request.json(); } catch { body = {}; }
       const roomId = toRoomId(body.room_id || '');
@@ -163,7 +242,6 @@ async function handleRequest(request, env) {
       return jsonResponse({ success: true }, 200, env);
     }
 
-    // 删除房间
     if (path === '/api/rooms' && method === 'DELETE') {
       let body; try { body = await request.json(); } catch { body = {}; }
       const roomId = toRoomId(body.room_id || '');
@@ -173,7 +251,6 @@ async function handleRequest(request, env) {
       return jsonResponse({ success: true }, 200, env);
     }
 
-    // 日志
     if (path === '/api/logs' && method === 'GET') {
       const logs = await getLogs(env);
       return jsonResponse(logs, 200, env);
@@ -183,7 +260,6 @@ async function handleRequest(request, env) {
       return jsonResponse({ success: true }, 200, env);
     }
 
-    // 通知配置
     if (path === '/api/notify-configs' && method === 'GET') {
       const configs = await getNotifyConfigs(env);
       return jsonResponse(configs, 200, env);
@@ -230,7 +306,6 @@ async function handleRequest(request, env) {
       } catch (e) { return jsonResponse({ error: e.message }, 500, env); }
     }
 
-    // 监控
     if (path === '/api/monitor' && method === 'POST') {
       let body; try { body = await request.json(); } catch { body = {}; }
       const force = body.force === true;
@@ -239,7 +314,6 @@ async function handleRequest(request, env) {
       return jsonResponse(result, 200, env);
     }
 
-    // 模拟直播通知
     if (path === '/api/send-live-notify' && method === 'POST') {
       const roomIds = await getRoomList(env);
       if (!roomIds.length) return jsonResponse({ error: '房间列表为空' }, 400, env);
@@ -259,7 +333,6 @@ async function handleRequest(request, env) {
 
     return jsonResponse({ error: 'Not Found' }, 404, env);
   } catch (e) {
-    // 全局异常捕获：确保任何未捕获错误都返回 JSON
     console.error('Unhandled error:', e);
     return jsonResponse({ error: '服务器内部错误: ' + e.message }, 500, env);
   }
