@@ -1,3 +1,4 @@
+// ===== 完整 HTML 主页面（无登录面板，依赖 /login 路由）=====
 const HTML_FULL = `<!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -12,7 +13,34 @@ const HTML_FULL = `<!DOCTYPE html>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.11.0/axios.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.8/js/bootstrap.bundle.min.js"></script>
 <style>
-:root{--bg:#f0f5ff;--card-bg:#ffffff;--primary:#2b6cb5;--text:#1a365d}[data-bs-theme="dark"]{--bg:#1a202c;--card-bg:#2d3748;--primary:#4a8bdb;--text:#e2e8f0}body{background:var(--bg);color:var(--text);transition:0.3s}.card{background:var(--card-bg);border:none;border-radius:16px;box-shadow:0 4px 12px rgba(43,108,181,0.08)}.card-header{background:var(--primary);color:white;border-radius:16px 16px 0 0!important;padding:0.75rem 1.25rem;font-weight:600}.btn-primary{background:var(--primary);border-color:var(--primary)}.btn-outline-primary{color:var(--primary);border-color:var(--primary)}.btn-outline-primary:hover{background:var(--primary);color:white}.btn-outline-danger:hover{background:#dc3545;color:white}.status-dot{width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:8px;flex-shrink:0}.status-dot.live{background:#20c997;box-shadow:0 0 12px rgba(32,201,151,0.6)}.status-dot.offline{background:#dc3545;box-shadow:0 0 12px rgba(220,53,69,0.4)}.room-card{transition:0.2s;cursor:default}.room-card:hover{transform:translateY(-4px);box-shadow:0 8px 24px rgba(43,108,181,0.12)}.room-title{font-weight:600;font-size:1.1rem;margin-bottom:0.25rem}.room-meta{font-size:0.9rem;color:#6c757d}.log-box{max-height:300px;overflow-y:auto;font-size:0.85rem;background:var(--card-bg);border-radius:0 0 16px 16px;padding:0.5rem 1rem}.log-entry{padding:0.25rem 0;border-bottom:1px solid rgba(0,0,0,0.05)}.log-time{color:#6c757d;margin-right:0.5rem}.log-level-info{color:#0d6efd}.log-level-warn{color:#ffc107}.log-level-error{color:#dc3545}.tab-btn{border-radius:12px 12px 0 0;font-weight:500}.tab-btn.active{background:var(--primary);color:white}.tab-btn:not(.active){background:transparent;color:var(--text)}.tab-btn:not(.active):hover{background:rgba(43,108,181,0.08)}#notifies .form-control,#notifies .form-select{background:var(--card-bg);color:var(--text);border-color:#ced4da}[data-bs-theme="dark"] .form-control,[data-bs-theme="dark"] .form-select{background:#2d3748;color:#e2e8f0;border-color:#4a5568}
+:root{--bg:#f0f5ff;--card-bg:#ffffff;--primary:#2b6cb5;--text:#1a365d}
+[data-bs-theme="dark"]{--bg:#1a202c;--card-bg:#2d3748;--primary:#4a8bdb;--text:#e2e8f0}
+body{background:var(--bg);color:var(--text);transition:0.3s}
+.card{background:var(--card-bg);border:none;border-radius:16px;box-shadow:0 4px 12px rgba(43,108,181,0.08)}
+.card-header{background:var(--primary);color:white;border-radius:16px 16px 0 0!important;padding:0.75rem 1.25rem;font-weight:600}
+.btn-primary{background:var(--primary);border-color:var(--primary)}
+.btn-outline-primary{color:var(--primary);border-color:var(--primary)}
+.btn-outline-primary:hover{background:var(--primary);color:white}
+.btn-outline-danger:hover{background:#dc3545;color:white}
+.status-dot{width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:8px;flex-shrink:0}
+.status-dot.live{background:#20c997;box-shadow:0 0 12px rgba(32,201,151,0.6)}
+.status-dot.offline{background:#dc3545;box-shadow:0 0 12px rgba(220,53,69,0.4)}
+.room-card{transition:0.2s;cursor:default}
+.room-card:hover{transform:translateY(-4px);box-shadow:0 8px 24px rgba(43,108,181,0.12)}
+.room-title{font-weight:600;font-size:1.1rem;margin-bottom:0.25rem}
+.room-meta{font-size:0.9rem;color:#6c757d}
+.log-box{max-height:300px;overflow-y:auto;font-size:0.85rem;background:var(--card-bg);border-radius:0 0 16px 16px;padding:0.5rem 1rem}
+.log-entry{padding:0.25rem 0;border-bottom:1px solid rgba(0,0,0,0.05)}
+.log-time{color:#6c757d;margin-right:0.5rem}
+.log-level-info{color:#0d6efd}
+.log-level-warn{color:#ffc107}
+.log-level-error{color:#dc3545}
+.tab-btn{border-radius:12px 12px 0 0;font-weight:500}
+.tab-btn.active{background:var(--primary);color:white}
+.tab-btn:not(.active){background:transparent;color:var(--text)}
+.tab-btn:not(.active):hover{background:rgba(43,108,181,0.08)}
+#notifies .form-control,#notifies .form-select{background:var(--card-bg);color:var(--text);border-color:#ced4da}
+[data-bs-theme="dark"] .form-control,[data-bs-theme="dark"] .form-select{background:#2d3748;color:#e2e8f0;border-color:#4a5568}
 </style>
 </head>
 <body>
@@ -54,7 +82,6 @@ function showMessage(msg,type){type=type||'info';const box=document.createElemen
 function escapeHtml(str){return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function formatDate(iso){if(!iso)return'从未更新';return new Date(iso).toLocaleString();}
 async function checkAuth(){try{const res=await axios.get('/api/rooms');if(res.status===200&&res.data&&typeof res.data.rooms!=='undefined')return true;return false;}catch(e){return false;}}
-async function login(username,password){try{const res=await axios.post('/api/login',{username,password});if(res.data.success)return true;throw new Error(res.data.error||'登录失败');}catch(e){throw new Error(e.response?.data?.error||e.message);}}
 function logout(){axios.post('/api/logout');document.cookie='auth=; Max-Age=0; path=/; domain=.262832.xyz';window.location.href='/login';}
 function showMainPanel(){document.getElementById('mainPanel').style.display='block';}
 async function renderRooms(){const container=document.getElementById('roomContainer');try{const res=await axios.get('/api/rooms');const{rooms,states}=res.data;if(!rooms||!rooms.length){container.innerHTML='<div class="col-12 text-center text-muted py-4">暂无房间，请添加</div>';return;}let html='';for(const id of rooms){const state=states[id]||{};const isLive=state.state==='LIVE';const dotClass=isLive?'live':'offline';const title=state.last_title||'未知';const online=state.last_online||0;const area=state.last_parent_area?state.last_parent_area+' - '+state.last_area:'未知分区';const updateTime=formatDate(state.last_update);html+=\`<div class="col"><div class="card room-card h-100"><div class="card-body d-flex align-items-start"><span class="status-dot \${dotClass}"></span><div class="flex-grow-1 ms-2"><div class="room-title">\${escapeHtml(title)}</div><div class="room-meta">房间 \${id} · 人气 \${online} · \${escapeHtml(area)}</div><div class="room-meta small">更新于 \${updateTime}</div></div><button class="delete-room-btn btn btn-outline-danger btn-sm" data-room="\${id}" style="writing-mode: vertical-rl; letter-spacing: 2px; padding: 4px 6px; height: auto; min-height: 60px; line-height: 1.2;">删除</button></div></div></div>\`;}container.innerHTML=html;}catch(e){showMessage('加载房间失败: '+e.message,'error');}}
@@ -86,6 +113,7 @@ else{window.location.href='/login';}
 </body>
 </html>`;
 
+// ===== 独立登录页面 =====
 const LOGIN_PAGE = `<!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -106,6 +134,7 @@ document.getElementById('loginForm').addEventListener('submit',async function(e)
 </body>
 </html>`;
 
+// ===== Worker 入口 =====
 export default {
   async fetch(request, env) {
     const backendUrl = env.BACKEND_URL;
@@ -115,23 +144,32 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    // 独立登录页
     if (path === '/login') {
       return new Response(LOGIN_PAGE, {
         headers: { 'Content-Type': 'text/html; charset=utf-8' }
       });
     }
 
+    // 代理所有 /api/* 请求到后端
     if (path.startsWith('/api/')) {
-      const target = backendUrl + path + url.search;
-      const newReq = new Request(target, {
-        method: request.method,
-        headers: request.headers,
-        body: request.body,
-        redirect: 'follow'
-      });
-      return fetch(newReq);
+      try {
+        const target = backendUrl + path + url.search;
+        const newReq = new Request(target, {
+          method: request.method,
+          headers: request.headers,
+          body: request.body,
+          redirect: 'follow'
+        });
+        const resp = await fetch(newReq);
+        // 返回响应，保留所有头（包括 Set-Cookie）
+        return resp;
+      } catch (err) {
+        return new Response('代理错误: ' + err.message, { status: 500 });
+      }
     }
 
+    // 默认返回主页面
     return new Response(HTML_FULL, {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
