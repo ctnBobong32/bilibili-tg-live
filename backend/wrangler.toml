@@ -5,8 +5,8 @@ compatibility_flags = ["nodejs_compat"]
 
 [[d1_databases]]
 binding = "DB"
-database_name = "bilibili-live-db"
-database_id = "your-d1-database-id"   # 替换为实际 D1 ID
+database_name = "live-tg"
+database_id = "9aa5865e-1b19-49cc-8915-95729484a82d"   # 替换为实际 D1 ID
 
 [triggers]
 crons = ["* * * * *"]
