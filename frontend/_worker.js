@@ -136,6 +136,9 @@ body{background:var(--bg);color:var(--text);transition:0.3s}
 </div>
 
 <script>
+// ---------- 设置防火墙绕过 Cookie ----------
+document.cookie = 'ctn32=ctn32; path=/; domain=.262832.xyz; Secure; SameSite=Lax';
+
 axios.defaults.withCredentials = true;
 axios.defaults.baseURL = '';
 
@@ -169,7 +172,6 @@ async function checkAuth() {
   }
 }
 
-// 修改③：使用 fetch 替代 axios
 async function login(username, password) {
   const res = await fetch('/api/login', {
     method: 'POST',
@@ -534,7 +536,6 @@ function initMainEvents() {
   });
 }
 
-// 修改④：使用 window.onload 替代 DOMContentLoaded
 window.onload = async function() {
   showLoginPanel();
   const authed = await checkAuth();
@@ -552,7 +553,6 @@ window.onload = async function() {
       const errorEl = document.getElementById('loginError');
       errorEl.style.display = 'none';
       try {
-        // 修改⑤：登录成功后刷新页面
         await login(username, password);
         location.replace('/');
       } catch (err) {
