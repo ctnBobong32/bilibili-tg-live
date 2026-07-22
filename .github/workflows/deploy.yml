@@ -1,4 +1,4 @@
-name: 部署到 Cloudflare Workers
+name: 手动部署 Workers
 
 on:
   workflow_dispatch:
@@ -13,17 +13,53 @@ jobs:
       - name: 安装 Wrangler
         run: npm install -g wrangler
 
+      - name: 校验文件结构
+        run: |
+          echo "=== 仓库根目录内容 ==="
+          ls -la
+          echo ""
+          echo "=== backend 目录 ==="
+          ls -la backend/
+          echo ""
+          echo "=== frontend 目录 ==="
+          ls -la frontend/
+          echo ""
+          echo "=== 检查 backend/_worker.js ==="
+          if [ -f backend/_worker.js ]; then
+            echo "[OK] backend/_worker.js 存在"
+            echo "文件大小: $(wc -c < backend/_worker.js) 字节"
+            head -n 5 backend/_worker.js
+          else
+            echo "[FAIL] backend/_worker.js 不存在"
+            exit 1
+          fi
+          echo ""
+          echo "=== 检查 frontend/_worker.js ==="
+          if [ -f frontend/_worker.js ]; then
+            echo "[OK] frontend/_worker.js 存在"
+            echo "文件大小: $(wc -c < frontend/_worker.js) 字节"
+          else
+            echo "[FAIL] frontend/_worker.js 不存在"
+            exit 1
+          fi
+          echo ""
+          echo "=== backend/wrangler.toml 关键配置 ==="
+          grep -E "^(name|main|compatibility)" backend/wrangler.toml || echo "[WARN] 未找到 main 字段"
+          echo ""
+          echo "=== frontend/wrangler.toml 关键配置 ==="
+          grep -E "^(name|main|compatibility)" frontend/wrangler.toml || echo "[WARN] 未找到 main 字段"
+
       - name: 部署后端 Worker
-        run: wrangler deploy --config backend/wrangler.toml
+        run: wrangler deploy --config backend/wrangler.toml --verbose
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
 
       - name: 部署前端 Worker
-        run: wrangler deploy --config frontend/wrangler.toml
+        run: wrangler deploy --config frontend/wrangler.toml --verbose
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
 
-      - name: 部署成功提示
-        run: echo "✅ 部署完成！访问 https://live.262832.xyz 查看。"
+      - name: 部署完成
+        run: echo "部署完成，请访问 https://live.262832.xyz"
