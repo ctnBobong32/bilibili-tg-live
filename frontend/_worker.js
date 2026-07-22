@@ -9,8 +9,8 @@ const HTML = `<!DOCTYPE html>
 <meta http-equiv="Expires" content="0">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.8/css/bootstrap.min.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.11.0/axios.min.js"></script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.8/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.11.0/axios.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.8/js/bootstrap.bundle.min.js"></script>
 <style>
 :root{--bg:#f0f5ff;--card-bg:#ffffff;--primary:#2b6cb5;--text:#1a365d}
 [data-bs-theme="dark"]{--bg:#1a202c;--card-bg:#2d3748;--primary:#4a8bdb;--text:#e2e8f0}
@@ -51,7 +51,7 @@ body{background:var(--bg);color:var(--text);transition:0.3s}
         <div class="card-body">
           <h1 class="card-title text-center">管理登录</h1>
           <div id="loginError" class="alert alert-danger" style="display:none;"></div>
-          <form id="loginForm">
+          <form id="loginForm" action="javascript:void(0);" method="post">
             <div class="mb-3"><label class="form-label">用户名</label><input type="text" id="loginUsername" class="form-control" required></div>
             <div class="mb-3"><label class="form-label">密码</label><input type="password" id="loginPassword" class="form-control" required></div>
             <button type="submit" class="btn btn-primary w-100">登录</button>
@@ -62,24 +62,78 @@ body{background:var(--bg);color:var(--text);transition:0.3s}
   </div>
 
   <div id="mainPanel" style="display:none;">
-    <div class="row mb-3 align-items-center"><div class="col-md-6"><h1 class="d-flex align-items-center gap-2" style="color:var(--primary);"><i class="bi bi-broadcast"></i> 直播监控</h1></div><div class="col-md-6 text-end"><button id="themeToggle" class="btn btn-outline-secondary me-2">深色</button><button id="logoutBtn" class="btn btn-outline-danger">退出</button></div></div>
+    <div class="row mb-3 align-items-center">
+      <div class="col-md-6"><h1 class="d-flex align-items-center gap-2" style="color:var(--primary);"><i class="bi bi-broadcast"></i> 直播监控</h1></div>
+      <div class="col-md-6 text-end"><button id="themeToggle" class="btn btn-outline-secondary me-2">深色</button><button id="logoutBtn" class="btn btn-outline-danger">退出</button></div>
+    </div>
     <div id="messageArea"></div>
-    <ul class="nav nav-tabs mb-3" id="myTab" role="tablist"><li class="nav-item"><button class="nav-link tab-btn active" id="rooms-tab" data-bs-toggle="tab" data-bs-target="#rooms" type="button">房间</button></li><li class="nav-item"><button class="nav-link tab-btn" id="notifies-tab" data-bs-toggle="tab" data-bs-target="#notifies" type="button">通知配置</button></li></ul>
+    <ul class="nav nav-tabs mb-3" id="myTab" role="tablist">
+      <li class="nav-item"><button class="nav-link tab-btn active" id="rooms-tab" data-bs-toggle="tab" data-bs-target="#rooms" type="button">房间</button></li>
+      <li class="nav-item"><button class="nav-link tab-btn" id="notifies-tab" data-bs-toggle="tab" data-bs-target="#notifies" type="button">通知配置</button></li>
+    </ul>
     <div class="tab-content">
       <div class="tab-pane active" id="rooms">
-        <div class="card"><div class="card-header d-flex flex-wrap gap-2 align-items-center"><i class="bi bi-house-door"></i> 监控房间<div class="ms-auto d-flex flex-wrap gap-2"><button id="addRoomBtn" class="btn btn-sm btn-light"><i class="bi bi-plus-circle"></i> 添加</button><button id="checkAllBtn" class="btn btn-sm btn-light"><i class="bi bi-arrow-repeat"></i> 检查</button><button id="refreshRoomsBtn" class="btn btn-sm btn-light"><i class="bi bi-cloud-refresh"></i> 刷新</button><button id="sendLiveBtn" class="btn btn-sm btn-warning"><i class="bi bi-broadcast"></i> 模拟</button><div class="input-group input-group-sm" style="width:200px;"><input id="singleCheckInput" class="form-control" placeholder="房间号"><button id="singleCheckBtn" class="btn btn-light">查</button></div></div></div><div class="card-body"><div id="roomContainer" class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3"></div></div></div>
-        <div class="card mt-4"><div class="card-header d-flex flex-wrap gap-2 align-items-center"><i class="bi bi-journal-text"></i> 运行日志<div class="ms-auto d-flex gap-2 flex-wrap"><button id="clearLogsBtn" class="btn btn-sm btn-light"><i class="bi bi-trash"></i> 清除</button><button id="refreshLogsBtn" class="btn btn-sm btn-light"><i class="bi bi-arrow-clockwise"></i> 刷新</button><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="autoRefresh" checked><label class="form-check-label" for="autoRefresh">自动</label></div><input id="logSearch" class="form-control form-control-sm" placeholder="搜索..." style="width:120px;"><select id="logLevelFilter" class="form-select form-select-sm" style="width:auto;"><option value="">全部</option><option value="info">Info</option><option value="warn">Warn</option><option value="error">Error</option></select><button id="exportLogsBtn" class="btn btn-sm btn-light"><i class="bi bi-download"></i></button></div></div><div id="logContainer" class="log-box"></div></div>
+        <div class="card">
+          <div class="card-header d-flex flex-wrap gap-2 align-items-center">
+            <i class="bi bi-house-door"></i> 监控房间
+            <div class="ms-auto d-flex flex-wrap gap-2">
+              <button id="addRoomBtn" class="btn btn-sm btn-light"><i class="bi bi-plus-circle"></i> 添加</button>
+              <button id="checkAllBtn" class="btn btn-sm btn-light"><i class="bi bi-arrow-repeat"></i> 检查</button>
+              <button id="refreshRoomsBtn" class="btn btn-sm btn-light"><i class="bi bi-cloud-refresh"></i> 刷新</button>
+              <button id="sendLiveBtn" class="btn btn-sm btn-warning"><i class="bi bi-broadcast"></i> 模拟</button>
+              <div class="input-group input-group-sm" style="width:200px;">
+                <input id="singleCheckInput" class="form-control" placeholder="房间号">
+                <button id="singleCheckBtn" class="btn btn-light">查</button>
+              </div>
+            </div>
+          </div>
+          <div class="card-body"><div id="roomContainer" class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3"></div></div>
+        </div>
+        <div class="card mt-4">
+          <div class="card-header d-flex flex-wrap gap-2 align-items-center">
+            <i class="bi bi-journal-text"></i> 运行日志
+            <div class="ms-auto d-flex gap-2 flex-wrap">
+              <button id="clearLogsBtn" class="btn btn-sm btn-light"><i class="bi bi-trash"></i> 清除</button>
+              <button id="refreshLogsBtn" class="btn btn-sm btn-light"><i class="bi bi-arrow-clockwise"></i> 刷新</button>
+              <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="autoRefresh" checked><label class="form-check-label" for="autoRefresh">自动</label></div>
+              <input id="logSearch" class="form-control form-control-sm" placeholder="搜索..." style="width:120px;">
+              <select id="logLevelFilter" class="form-select form-select-sm" style="width:auto;"><option value="">全部</option><option value="info">Info</option><option value="warn">Warn</option><option value="error">Error</option></select>
+              <button id="exportLogsBtn" class="btn btn-sm btn-light"><i class="bi bi-download"></i></button>
+            </div>
+          </div>
+          <div id="logContainer" class="log-box"></div>
+        </div>
       </div>
       <div class="tab-pane" id="notifies">
-        <div class="card mb-3"><div class="card-header"><i class="bi bi-plus-circle"></i> 添加通知配置</div><div class="card-body"><form id="addNotifyForm" class="row g-3"><div class="col-md-4"><label class="form-label">名称</label><input type="text" name="name" class="form-control" placeholder="" required></div><div class="col-md-4"><label class="form-label">协议</label><select name="protocol" id="protocolSelect" class="form-select"><option value="telegram">Telegram</option><option value="onebot_private">OneBot 私聊</option><option value="onebot_group">OneBot 群聊</option><option value="discord">Discord Webhook</option><option value="custom_webhook">自定义 Webhook</option></select></div><input type="hidden" id="apiUrl" name="api_url"><div class="col-md-6" id="tgTokenGroup"><label class="form-label">Bot Token</label><input type="text" id="tgToken" name="tg_token" class="form-control" placeholder=""><small class="text-muted">自动构建 API 地址</small></div><div class="col-md-6"><label class="form-label" id="receiverLabel">接收者 ID</label><input type="text" name="chat_id" id="chatId" class="form-control" placeholder=""></div><div class="col-12"><label class="form-label">通知模板 (可选)</label><textarea name="template" id="templateArea" class="form-control" rows="6">[{{事件}}] {{主播}}\n标题：{{标题}}\n房间号：{{房间号}} | UID：{{UID}}\n分区：{{父分区}} - {{分区}}\n人气：{{人气}} | 直播时间：{{直播时间}}\n直播间链接：{{直播链接}}\n封面：{{封面}}\n等级：{{等级}} | 粉丝：{{粉丝}} | 关注：{{关注}} | 性别：{{性别}}\nVIP：{{VIP类型}} ({{VIP状态}})\n投稿数：{{投稿数}} | 文章数：{{文章数}}\n签名：{{签名}}\n头像：{{头像}}\n更新时间：{{时间}}</textarea></div><div class="col-12"><button type="submit" class="btn btn-primary"><i class="bi bi-plus-circle"></i> 添加配置</button></div></form></div></div>
-        <div class="card"><div class="card-header"><i class="bi bi-list-ul"></i> 现有配置</div><div class="card-body"><div class="table-responsive"><table class="table table-hover"><thead><tr><th>名称</th><th>协议</th><th>状态</th><th>操作</th></tr></thead><tbody id="configTableBody"></tbody></table></div></div></div>
+        <div class="card mb-3">
+          <div class="card-header"><i class="bi bi-plus-circle"></i> 添加通知配置</div>
+          <div class="card-body">
+            <form id="addNotifyForm" class="row g-3">
+              <div class="col-md-4"><label class="form-label">名称</label><input type="text" name="name" class="form-control" placeholder="" required></div>
+              <div class="col-md-4"><label class="form-label">协议</label><select name="protocol" id="protocolSelect" class="form-select"><option value="telegram">Telegram</option><option value="onebot_private">OneBot 私聊</option><option value="onebot_group">OneBot 群聊</option><option value="discord">Discord Webhook</option><option value="custom_webhook">自定义 Webhook</option></select></div>
+              <input type="hidden" id="apiUrl" name="api_url">
+              <div class="col-md-6" id="tgTokenGroup"><label class="form-label">Bot Token</label><input type="text" id="tgToken" name="tg_token" class="form-control" placeholder=""><small class="text-muted">自动构建 API 地址</small></div>
+              <div class="col-md-6"><label class="form-label" id="receiverLabel">接收者 ID</label><input type="text" name="chat_id" id="chatId" class="form-control" placeholder=""></div>
+              <div class="col-12"><label class="form-label">通知模板 (可选)</label><textarea name="template" id="templateArea" class="form-control" rows="6">[{{事件}}] {{主播}}\n标题：{{标题}}\n房间号：{{房间号}} | UID：{{UID}}\n分区：{{父分区}} - {{分区}}\n人气：{{人气}} | 直播时间：{{直播时间}}\n直播间链接：{{直播链接}}\n封面：{{封面}}\n等级：{{等级}} | 粉丝：{{粉丝}} | 关注：{{关注}} | 性别：{{性别}}\nVIP：{{VIP类型}} ({{VIP状态}})\n投稿数：{{投稿数}} | 文章数：{{文章数}}\n签名：{{签名}}\n头像：{{头像}}\n更新时间：{{时间}}</textarea></div>
+              <div class="col-12"><button type="submit" class="btn btn-primary"><i class="bi bi-plus-circle"></i> 添加配置</button></div>
+            </form>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><i class="bi bi-list-ul"></i> 现有配置</div>
+          <div class="card-body"><div class="table-responsive"><table class="table table-hover"><thead><tr><th>名称</th><th>协议</th><th>状态</th><th>操作</th></tr></thead><tbody id="configTableBody"></tbody></table></div></div>
+        </div>
       </div>
     </div>
   </div>
 </div>
 
-<div class="modal fade" id="addRoomModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">添加房间</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>请输入直播间房间号：</p><input type="text" id="roomInput" class="form-control" placeholder="例如：1768500100"></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button type="button" id="addRoomConfirmBtn" class="btn btn-primary">完成</button></div></div></div></div>
-<div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 id="modalTitle" class="modal-title">提示</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body" id="modalMessage"></div><div class="modal-footer"><button type="button" id="modalConfirmBtn" class="btn btn-primary">确定</button><button type="button" id="modalCancelBtn" class="btn btn-secondary" data-bs-dismiss="modal">取消</button></div></div></div></div>
+<div class="modal fade" id="addRoomModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">添加房间</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>请输入直播间房间号：</p><input type="text" id="roomInput" class="form-control" placeholder="例如：1768500100"></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button type="button" id="addRoomConfirmBtn" class="btn btn-primary">完成</button></div></div></div>
+</div>
+<div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 id="modalTitle" class="modal-title">提示</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body" id="modalMessage"></div><div class="modal-footer"><button type="button" id="modalConfirmBtn" class="btn btn-primary">确定</button><button type="button" id="modalCancelBtn" class="btn btn-secondary" data-bs-dismiss="modal">取消</button></div></div></div>
+</div>
 
 <script>
 axios.defaults.withCredentials = true;
@@ -115,16 +169,25 @@ async function checkAuth() {
   }
 }
 
+// 修改③：使用 fetch 替代 axios
 async function login(username, password) {
-  const res = await axios.post('/api/login', { username, password });
-  if (!res.data.success) throw new Error(res.data.error || '登录失败');
+  const res = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ username, password })
+  });
+  const data = await res.json();
+  if (!data.success) {
+    throw new Error(data.error || '登录失败');
+  }
   return true;
 }
 
 function logout() {
   axios.post('/api/logout');
-  document.cookie = 'auth=; Max-Age=0; path=/; domain=.262832.xyz';
-  showLoginPanel();
+  document.cookie = 'auth=; Max-Age=0; path=/;';
+  location.replace('/');
 }
 
 function showLoginPanel() {
@@ -471,7 +534,8 @@ function initMainEvents() {
   });
 }
 
-document.addEventListener('DOMContentLoaded', async function() {
+// 修改④：使用 window.onload 替代 DOMContentLoaded
+window.onload = async function() {
   showLoginPanel();
   const authed = await checkAuth();
   if (authed) {
@@ -488,19 +552,16 @@ document.addEventListener('DOMContentLoaded', async function() {
       const errorEl = document.getElementById('loginError');
       errorEl.style.display = 'none';
       try {
+        // 修改⑤：登录成功后刷新页面
         await login(username, password);
-        showMainPanel();
-        await renderRooms();
-        await renderConfigs();
-        await fetchLogs();
-        initMainEvents();
+        location.replace('/');
       } catch (err) {
         errorEl.textContent = err.message;
         errorEl.style.display = 'block';
       }
     });
   }
-});
+};
 </script>
 </body>
 </html>`;
