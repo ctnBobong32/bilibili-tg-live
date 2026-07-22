@@ -1,0 +1,13 @@
+name = "tg-bridge-bot"
+main = "worker.js"
+compatibility_date = "2026-07-19"
+compatibility_flags = ["nodejs_compat"]
+
+[[kv_namespaces]]
+binding = "TOPIC_MAP"
+id = "20f76ff92a9749df88fca03981bb02a2"
+
+[vars]
+BOT_TOKEN = "8147611155:AAGbmqXnMqxFZUC-naGlVj_EV2gCE0uIwwc"
+BOT_ID = "8147611155"
+SUPERGROUP_ID = "-1003906821011"
