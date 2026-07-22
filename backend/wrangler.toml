@@ -1,1 +1,17 @@
+name = "bilibili-live-backend"
+main = "_worker.js"
+compatibility_date = "2026-07-19"
+compatibility_flags = ["nodejs_compat"]
 
+[[d1_databases]]
+binding = "DB"
+database_name = "bilibili-live-db"
+database_id = "your-d1-database-id"   # 替换为实际 D1 ID
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+ADMIN_USER = "admin"
+ADMIN_PASSWORD = "Ow114514"
+FRONTEND_URL = "https://live.262832.xyz"
