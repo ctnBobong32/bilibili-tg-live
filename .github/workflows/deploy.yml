@@ -4,88 +4,139 @@ on:
   workflow_dispatch:
     inputs:
       deploy_target:
-        description: '选择部署目标'
+        description: 选择部署目标
         required: true
-        default: '全部'
+        default: 全部
         type: choice
         options:
-          - '全部'
-          - '仅后端'
-          - '仅前端'
-          - '仅 Bot'
+          - 全部
+          - 仅后端
+          - 仅前端
+
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workers-deploy
+  cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
     steps:
       - name: 拉取代码
         uses: actions/checkout@v4
 
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
       - name: 安装 Wrangler
         run: npm install -g wrangler
 
-      - name: 校验文件结构
+      - name: 环境信息
         run: |
-          echo "=== 仓库根目录内容 ==="
-          ls -la
-          echo ""
-          echo "=== backend 目录 ==="
-          ls -la backend/ || echo "backend 不存在"
-          echo ""
-          echo "=== frontend 目录 ==="
-          ls -la frontend/ || echo "frontend 不存在"
-          echo ""
-          echo "=== bots 目录 ==="
-          ls -la bots/ || echo "bots 不存在"
-          echo ""
-          echo "=== 检查 backend/_worker.js ==="
-          if [ -f backend/_worker.js ]; then
-            echo "[OK] backend/_worker.js 存在"
-          else
-            echo "[FAIL] backend/_worker.js 不存在"
-            exit 1
-          fi
-          echo ""
-          echo "=== 检查 frontend/_worker.js ==="
-          if [ -f frontend/_worker.js ]; then
-            echo "[OK] frontend/_worker.js 存在"
-          else
-            echo "[FAIL] frontend/_worker.js 不存在"
-            exit 1
-          fi
-          echo ""
-          echo "=== 检查 bots/wrangler.toml ==="
-          if [ -f bots/wrangler.toml ]; then
-            echo "[OK] bots/wrangler.toml 存在"
-          else
-            echo "[FAIL] bots/wrangler.toml 不存在"
-            exit 1
-          fi
+          echo "Node: $(node -v)"
+          echo "NPM: $(npm -v)"
+          echo "Wrangler: $(wrangler --version)"
+          echo "Commit:"
+          git log -1 --oneline
 
-      - name: 部署后端 Worker
-        if: github.event.inputs.deploy_target == '全部' || github.event.inputs.deploy_target == '仅后端'
-        run: wrangler deploy --config backend/wrangler.toml
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-
-      - name: 部署前端 Worker
-        if: github.event.inputs.deploy_target == '全部' || github.event.inputs.deploy_target == '仅前端'
-        run: wrangler deploy --config frontend/wrangler.toml
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-
-      - name: 部署 Bot Worker
-        if: github.event.inputs.deploy_target == '全部' || github.event.inputs.deploy_target == '仅 Bot'
-        run: wrangler deploy --config bots/wrangler.toml
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-
-      - name: 部署完成
+      - name: 检查 Cloudflare Secret
         run: |
-          echo "部署目标: ${{ github.event.inputs.deploy_target }}"
-          echo "访问地址:"
-          echo "  前端: https://live.262832.xyz"
-          echo "  Bot: 请自行配置 Webhook"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          echo "Cloudflare Secret OK"
+
+      - name: 校验目录
+        run: |
+          ls -R
+
+          test -f backend/_worker.js
+          test -f backend/wrangler.toml
+
+          test -f frontend/_worker.js
+          test -f frontend/wrangler.toml
+
+          echo "目录检查完成"
+
+      - name: JS语法检查
+        run: |
+          node --check backend/_worker.js
+          node --check frontend/_worker.js
+
+      - name: Dry Run
+        run: |
+          wrangler deploy \
+            --config backend/wrangler.toml \
+            --dry-run
+
+          wrangler deploy \
+            --config frontend/wrangler.toml \
+            --dry-run
+
+      - name: 部署后端
+        if: github.event_name == 'push' || github.event.inputs.deploy_target == '全部' || github.event.inputs.deploy_target == '仅后端'
+        run: |
+          wrangler deploy \
+            --config backend/wrangler.toml \
+            | tee backend.log
+
+      - name: 部署前端
+        if: github.event_name == 'push' || github.event.inputs.deploy_target == '全部' || github.event.inputs.deploy_target == '仅前端'
+        run: |
+          wrangler deploy \
+            --config frontend/wrangler.toml \
+            | tee frontend.log
+
+      - name: 等待生效
+        run: sleep 10
+
+      - name: 检查前端
+        run: |
+          curl -fsSL \
+            -H "User-Agent: GitHub-Actions" \
+            -w "\nHTTP:%{http_code}\nTIME:%{time_total}s\n" \
+            https://live.262832.xyz
+
+      - name: 检查后端
+        run: |
+          curl -fsSL \
+            -H "User-Agent: GitHub-Actions" \
+            -w "\nHTTP:%{http_code}\nTIME:%{time_total}s\n" \
+            https://live-api.262832.xyz
+
+      - name: 上传日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-log
+          path: |
+            backend.log
+            frontend.log
+
+      - name: GitHub Summary
+        if: always()
+        run: |
+          {
+            echo "# 部署完成"
+            echo ""
+            echo "- Commit: $(git rev-parse --short HEAD)"
+            echo "- Node: $(node -v)"
+            echo "- Wrangler: $(wrangler --version)"
+            echo "- 时间: $(date)"
+            echo "- 前端: https://live.262832.xyz"
+            echo "- 后端: https://live-api.262832.xyz"
+          } >> "$GITHUB_STEP_SUMMARY"
