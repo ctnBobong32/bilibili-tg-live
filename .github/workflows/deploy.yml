@@ -13,10 +13,6 @@ on:
           - 仅后端
           - 仅前端
 
-  push:
-    branches:
-      - main
-
 permissions:
   contents: read
 
@@ -41,7 +37,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
       - name: 安装 Wrangler
         run: npm install -g wrangler
@@ -88,14 +83,14 @@ jobs:
             --dry-run
 
       - name: 部署后端
-        if: github.event_name == 'push' || github.event.inputs.deploy_target == '全部' || github.event.inputs.deploy_target == '仅后端'
+        if: github.event.inputs.deploy_target == '全部' || github.event.inputs.deploy_target == '仅后端'
         run: |
           wrangler deploy \
             --config backend/wrangler.toml \
             | tee backend.log
 
       - name: 部署前端
-        if: github.event_name == 'push' || github.event.inputs.deploy_target == '全部' || github.event.inputs.deploy_target == '仅前端'
+        if: github.event.inputs.deploy_target == '全部' || github.event.inputs.deploy_target == '仅前端'
         run: |
           wrangler deploy \
             --config frontend/wrangler.toml \
@@ -104,19 +99,29 @@ jobs:
       - name: 等待生效
         run: sleep 10
 
-      - name: 检查前端
+      - name: 健康检查 - 前端
         run: |
-          curl -fsSL \
-            -H "User-Agent: GitHub-Actions" \
-            -w "\nHTTP:%{http_code}\nTIME:%{time_total}s\n" \
-            https://live.262832.xyz
+          echo "检查前端服务..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://live.262832.xyz)
+          echo "前端状态码: $HTTP_CODE"
+          if [ $HTTP_CODE -eq 200 ] || [ $HTTP_CODE -eq 403 ] || [ $HTTP_CODE -eq 401 ]; then
+            echo "前端服务正常"
+          else
+            echo "前端服务异常 (HTTP $HTTP_CODE)"
+            exit 1
+          fi
 
-      - name: 检查后端
+      - name: 健康检查 - 后端
         run: |
-          curl -fsSL \
-            -H "User-Agent: GitHub-Actions" \
-            -w "\nHTTP:%{http_code}\nTIME:%{time_total}s\n" \
-            https://live-api.262832.xyz
+          echo "检查后端服务..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://live-api.262832.xyz/api/rooms)
+          echo "后端状态码: $HTTP_CODE"
+          if [ $HTTP_CODE -eq 200 ] || [ $HTTP_CODE -eq 401 ] || [ $HTTP_CODE -eq 403 ]; then
+            echo "后端服务正常"
+          else
+            echo "后端服务异常 (HTTP $HTTP_CODE)"
+            exit 1
+          fi
 
       - name: 上传日志
         if: always()
