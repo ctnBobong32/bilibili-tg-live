@@ -1,1 +1,4 @@
-
+name = "bilibili-live-frontend"
+main = "_worker.js"
+compatibility_date = "2026-07-19"
+compatibility_flags = ["nodejs_compat"]
