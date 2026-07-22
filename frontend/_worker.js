@@ -1,5 +1,4 @@
 // ======================== 前端 Worker ========================
-// 注意：BACKEND_URL 从环境变量读取，在 fetch 中注入
 
 const HTML_TEMPLATE = `<!DOCTYPE html>
 <html lang="zh">
@@ -246,7 +245,7 @@ VIP：{{VIP类型}} ({{VIP状态}})
 </div>
 
 <script>
-const BACKEND = '${BACKEND_URL}';
+const BACKEND = '{{BACKEND_URL}}';
 
 // ---------- 全局配置 ----------
 axios.defaults.withCredentials = true;
@@ -709,7 +708,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 export default {
   async fetch(request, env) {
     const backendUrl = env.BACKEND_URL || 'https://live-api.262832.xyz';
-    const finalHtml = HTML_TEMPLATE.replace(/\$\{BACKEND_URL\}/g, backendUrl);
+    const finalHtml = HTML_TEMPLATE.replace(/\{\{BACKEND_URL\}\}/g, backendUrl);
     return new Response(finalHtml, {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
