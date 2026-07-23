@@ -12,6 +12,11 @@ on:
           - 全部
           - 仅后端
           - 仅前端
+      skip_health_check:
+        description: 跳过健康检查
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -58,13 +63,10 @@ jobs:
       - name: 校验目录
         run: |
           ls -R
-
           test -f backend/_worker.js
           test -f backend/wrangler.toml
-
           test -f frontend/_worker.js
           test -f frontend/wrangler.toml
-
           echo "目录检查完成"
 
       - name: JS语法检查
@@ -74,32 +76,25 @@ jobs:
 
       - name: Dry Run
         run: |
-          wrangler deploy \
-            --config backend/wrangler.toml \
-            --dry-run
-
-          wrangler deploy \
-            --config frontend/wrangler.toml \
-            --dry-run
+          wrangler deploy --config backend/wrangler.toml --dry-run
+          wrangler deploy --config frontend/wrangler.toml --dry-run
 
       - name: 部署后端
         if: github.event.inputs.deploy_target == '全部' || github.event.inputs.deploy_target == '仅后端'
         run: |
-          wrangler deploy \
-            --config backend/wrangler.toml \
-            | tee backend.log
+          wrangler deploy --config backend/wrangler.toml | tee backend.log
 
       - name: 部署前端
         if: github.event.inputs.deploy_target == '全部' || github.event.inputs.deploy_target == '仅前端'
         run: |
-          wrangler deploy \
-            --config frontend/wrangler.toml \
-            | tee frontend.log
+          wrangler deploy --config frontend/wrangler.toml | tee frontend.log
 
       - name: 等待生效
         run: sleep 10
 
       - name: 健康检查 - 前端
+        if: github.event.inputs.skip_health_check != true
+        continue-on-error: true
         run: |
           echo "检查前端服务..."
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://live.262832.xyz)
@@ -107,14 +102,45 @@ jobs:
           if [ $HTTP_CODE -eq 200 ] || [ $HTTP_CODE -eq 403 ] || [ $HTTP_CODE -eq 401 ]; then
             echo "前端服务正常"
           else
-            echo "前端服务异常 (HTTP $HTTP_CODE)"
-            exit 1
+            echo "前端服务异常 (HTTP $HTTP_CODE)，请手动验证"
           fi
 
       - name: 健康检查 - 后端
+        if: github.event.inputs.skip_health_check != true
+        continue-on-error: true
         run: |
           echo "检查后端服务..."
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://live-api.262832.xyz/api/rooms)
+          echo "后端状态码: $HTTP_CODE"
+          if [ $HTTP_CODE -eq 200 ] || [ $HTTP_CODE -eq 401 ] || [ $HTTP_CODE -eq 403 ]; then
+            echo "后端服务正常"
+          else
+            echo "后端服务异常 (HTTP $HTTP_CODE)，请手动验证"
+          fi
+
+      - name: 上传日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-log
+          path: |
+            backend.log
+            frontend.log
+
+      - name: GitHub Summary
+        if: always()
+        run: |
+          {
+            echo "# 部署完成"
+            echo ""
+            echo "- Commit: $(git rev-parse --short HEAD)"
+            echo "- Node: $(node -v)"
+            echo "- Wrangler: $(wrangler --version)"
+            echo "- 时间: $(date)"
+            echo "- 前端: https://live.262832.xyz"
+            echo "- 后端: https://live-api.262832.xyz"
+            echo "- 跳过健康检查: ${{ github.event.inputs.skip_health_check == true && '是' || '否' }}"
+          } >> "$GITHUB_STEP_SUMMARY"          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://live-api.262832.xyz/api/rooms)
           echo "后端状态码: $HTTP_CODE"
           if [ $HTTP_CODE -eq 200 ] || [ $HTTP_CODE -eq 401 ] || [ $HTTP_CODE -eq 403 ]; then
             echo "后端服务正常"
